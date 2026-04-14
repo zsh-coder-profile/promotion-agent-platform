@@ -1,0 +1,10 @@
+server:
+  port: 8080
+
+agentscope:
+  model:
+    openai:
+      base-url: ${API_URL}
+      api-key: ${API_KEY}
+      model-name: ${API_MODEL}
+
