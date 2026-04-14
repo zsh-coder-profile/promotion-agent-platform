@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Configuration;
  * 全局 Studio 可观测性配置
  * 应用启动时初始化 StudioManager，关闭时释放资源
  */
-@Configuration
+//@Configuration
 public class StudioConfig {
 
     @Value("${agentscope.studio.url:http://localhost:3000}")
