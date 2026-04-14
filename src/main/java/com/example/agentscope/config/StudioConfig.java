@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Configuration;
  * 全局 Studio 可观测性配置
  * 应用启动时初始化 StudioManager，关闭时释放资源
  */
-//@Configuration
+@Configuration
 public class StudioConfig {
 
     @Value("${agentscope.studio.url:http://localhost:3000}")
@@ -22,8 +22,15 @@ public class StudioConfig {
     @Value("${agentscope.studio.project:agent_scope_engine}")
     private String studioProject;
 
+    @Value("${agentscope.studio.enabled:true}")
+    private boolean enabled;
+
     @PostConstruct
     public void initStudio() {
+        if (!enabled) {
+            System.out.println("Studio 可观测性已禁用");
+            return;
+        }
         try {
             StudioManager.init()
                     .studioUrl(studioUrl)

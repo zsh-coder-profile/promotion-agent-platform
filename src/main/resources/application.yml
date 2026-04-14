@@ -12,4 +12,4 @@ langfuse:
   public-key: ${LANGFUSE_PUBLIC_KEY:pk-lf-501077fd-2af1-4b9d-ae33-635eccebaece}
   secret-key: ${LANGFUSE_SECRET_KEY:sk-lf-0a487bfb-5b1a-4eab-b3af-7af73aea8f70}
   base-url: ${LANGFUSE_BASE_URL:http://localhost:3000}
-  enabled: true
+  enabled: false
