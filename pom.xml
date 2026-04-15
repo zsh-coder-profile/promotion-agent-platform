@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.1</version>
+        <version>4.0.4</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
@@ -15,21 +15,15 @@
     <version>1.0.0-SNAPSHOT</version>
 
     <properties>
-        <java.version>21</java.version>
+        <java.version>17</java.version>
         <agentscope.version>1.0.11</agentscope.version>
+        <openai-java.version>4.28.0</openai-java.version>
+        <socket.io-client.version>2.1.2</socket.io-client.version>
+        <opentelemetry-reactor.version>2.26.1-alpha</opentelemetry-reactor.version>
+        <spring-ai-alibaba.version>1.1.2.2</spring-ai-alibaba.version>
+        <okhttp.version>5.3.2</okhttp.version>
     </properties>
 
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>io.opentelemetry</groupId>
-                <artifactId>opentelemetry-bom</artifactId>
-                <version>1.61.0</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 
     <dependencies>
         <!-- Spring Boot Web -->
@@ -56,19 +50,22 @@
         <dependency>
             <groupId>com.openai</groupId>
             <artifactId>openai-java</artifactId>
-            <version>4.31.0</version>
+            <version>${openai-java.version}</version>
         </dependency>
 
-        <!-- Studio 集成依赖 -->
+        <!-- OkHttp -->
+
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
-            <version>5.3.2</version>
+            <version>${okhttp.version}</version>
         </dependency>
+
+        <!-- Socket.IO Client for WebSocket communication -->
         <dependency>
             <groupId>io.socket</groupId>
             <artifactId>socket.io-client</artifactId>
-            <version>2.1.2</version>
+            <version>${socket.io-client.version}</version>
         </dependency>
         <dependency>
             <groupId>io.opentelemetry</groupId>
@@ -81,14 +78,14 @@
         <dependency>
             <groupId>io.opentelemetry.instrumentation</groupId>
             <artifactId>opentelemetry-reactor-3.1</artifactId>
-            <version>2.26.1-alpha</version>
+            <version>${opentelemetry-reactor.version}</version>
         </dependency>
 
         <!-- Spring AI Alibaba AgentScope (SequentialAgent / AgentScopeAgent 等 Pipeline 编排) -->
         <dependency>
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-starter-agentscope</artifactId>
-            <version>1.1.2.2</version>
+            <version>${spring-ai-alibaba.version}</version>
         </dependency>
 
     </dependencies>
