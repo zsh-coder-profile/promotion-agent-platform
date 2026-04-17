@@ -12,4 +12,31 @@ langfuse:
   public-key: ${LANGFUSE_PUBLIC_KEY:pk-lf-501077fd-2af1-4b9d-ae33-635eccebaece}
   secret-key: ${LANGFUSE_SECRET_KEY:sk-lf-0a487bfb-5b1a-4eab-b3af-7af73aea8f70}
   base-url: ${LANGFUSE_BASE_URL:http://localhost:3000}
-  enabled: false
+  enabled: true
+
+# h2 数据库配置，sqlagent 示例使用，ragagent 示例不需要
+#spring:
+#  datasource:
+#    url: jdbc:h2:mem:chinook;DB_CLOSE_DELAY=-1
+#    driver-class-name: org.h2.Driver
+#    username: sa
+#    password:
+#  sql:
+#    init:
+#      mode: always
+#      schema-locations: classpath:schema-chinook.sql
+
+# pgsql 数据库配置
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    username: postgres
+    password: postgres
+    url: jdbc:postgresql://127.0.0.1:5432/postgres?currentSchema=haagen_dazs
+
+
+workflow:
+  sql:
+    enabled: true
+  runner:
+    enabled: false
