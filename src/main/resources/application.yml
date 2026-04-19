@@ -4,12 +4,11 @@ server:
 agentscope:
   model:
     openai:
-      base-url: ${API_URL:https://proxy-gateway--zhang1761995069.replit.app/v1}
-      api-key: ${API_KEY:o6mMRmKPQ5qq2Q4dxBXyGwSa5frHJcDq} # 请替换为真实的 Mistral API Key
-      model-name: ${API_MODEL:gpt-5.2}
+      base-url: ${API_URL}
+      api-key: ${API_KEY}
+      model-name: ${API_MODEL}
   studio:
     enabled: false
-
 langfuse:
   public-key: ${LANGFUSE_PUBLIC_KEY:pk-lf-501077fd-2af1-4b9d-ae33-635eccebaece}
   secret-key: ${LANGFUSE_SECRET_KEY:sk-lf-0a487bfb-5b1a-4eab-b3af-7af73aea8f70}
