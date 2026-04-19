@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Agent Chat</title>
+    <style>
+        :root {
+            --bg: #f6f1e8;
+            --panel: rgba(255, 252, 247, 0.9);
+            --ink: #1d1b19;
+            --muted: #70665f;
+            --line: rgba(50, 36, 22, 0.12);
+            --accent: #bf5b2c;
+            --accent-soft: #f2c38a;
+            --success: #2d6a4f;
+            --danger: #b23a48;
+            --shadow: 0 20px 50px rgba(64, 41, 21, 0.12);
+            --radius: 24px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Avenir Next", "Segoe UI", "PingFang SC", sans-serif;
+            color: var(--ink);
+            background:
+                    radial-gradient(circle at top left, rgba(255, 214, 153, 0.65), transparent 28%),
+                    radial-gradient(circle at right 20%, rgba(191, 91, 44, 0.18), transparent 24%),
+                    linear-gradient(135deg, #f8f4eb 0%, #efe2d0 100%);
+        }
+
+        .shell {
+            width: min(1200px, calc(100% - 32px));
+            margin: 32px auto;
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 24px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(12px);
+        }
+
+        .sidebar {
+            padding: 24px;
+            position: sticky;
+            top: 24px;
+            height: fit-content;
+        }
+
+        .eyebrow {
+            color: var(--accent);
+            font-size: 12px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+
+        h1 {
+            font-size: 30px;
+            line-height: 1.05;
+            margin: 0 0 12px;
+        }
+
+        .sidebar p,
+        .meta,
+        .hint,
+        .badge {
+            color: var(--muted);
+        }
+
+        .identity-list {
+            display: grid;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .identity-card {
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 16px;
+            background: rgba(255, 255, 255, 0.65);
+            cursor: pointer;
+            transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+        }
+
+        .identity-card:hover,
+        .identity-card.active {
+            transform: translateY(-2px);
+            border-color: rgba(191, 91, 44, 0.45);
+            box-shadow: 0 14px 28px rgba(191, 91, 44, 0.12);
+        }
+
+        .identity-role {
+            display: inline-flex;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            background: rgba(191, 91, 44, 0.12);
+            color: var(--accent);
+            margin-bottom: 10px;
+        }
+
+        .workspace {
+            padding: 24px;
+            display: grid;
+            gap: 18px;
+        }
+
+        .hero {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: flex-start;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .hero h2 {
+            margin: 0 0 8px;
+            font-size: 26px;
+        }
+
+        .badge {
+            padding: 10px 14px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid var(--line);
+            min-width: 220px;
+        }
+
+        .composer {
+            display: grid;
+            gap: 12px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            resize: vertical;
+            padding: 18px;
+            border-radius: 20px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.82);
+            font: inherit;
+            color: var(--ink);
+            outline: none;
+        }
+
+        textarea:focus {
+            border-color: rgba(191, 91, 44, 0.45);
+            box-shadow: 0 0 0 4px rgba(191, 91, 44, 0.08);
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            border: 0;
+            border-radius: 999px;
+            padding: 12px 18px;
+            font: inherit;
+            cursor: pointer;
+            transition: transform 160ms ease, opacity 160ms ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+        }
+
+        .primary {
+            background: linear-gradient(135deg, #bf5b2c, #d37c3a);
+            color: #fffaf4;
+        }
+
+        .secondary {
+            background: rgba(255, 255, 255, 0.75);
+            color: var(--ink);
+            border: 1px solid var(--line);
+        }
+
+        .status {
+            min-height: 24px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .status.error {
+            color: var(--danger);
+        }
+
+        .status.success {
+            color: var(--success);
+        }
+
+        .result-grid {
+            display: grid;
+            gap: 16px;
+        }
+
+        .result-card {
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.7);
+            overflow: hidden;
+        }
+
+        .result-card header {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            padding: 16px 18px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .result-card h3 {
+            margin: 0;
+            font-size: 16px;
+        }
+
+        pre {
+            margin: 0;
+            padding: 18px;
+            overflow: auto;
+            background: #1f1a16;
+            color: #f8f1e8;
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.55;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--line);
+            text-align: left;
+            font-size: 14px;
+            vertical-align: top;
+        }
+
+        th {
+            background: rgba(191, 91, 44, 0.08);
+        }
+
+        .empty {
+            padding: 24px;
+            color: var(--muted);
+        }
+
+        @media (max-width: 980px) {
+            .shell {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+            }
+
+            .hero {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <aside class="panel sidebar">
+        <div class="eyebrow">Demo Identity</div>
+        <h1>SQL Agent 租户问答台</h1>
+        <p>通过切换不同身份预设来模拟不同登录用户。普通用户会自动走租户隔离，管理员查看全局数据。</p>
+        <div class="identity-list" id="identityList"></div>
+    </aside>
+
+    <main class="panel workspace">
+        <section class="hero">
+            <div>
+                <div class="eyebrow">Ask Anything</div>
+                <h2>用户无感知租户，后端自动注入权限上下文</h2>
+                <div class="meta">接口：<code>/api/sql/query</code>，请求头演示：<code>X-User-Id</code> / <code>X-Tenant-Id</code> / <code>X-User-Role</code></div>
+            </div>
+            <div class="badge" id="identitySummary"></div>
+        </section>
+
+        <section class="composer">
+            <textarea id="questionInput" placeholder="例如：帮我看下本月订单金额最高的前 5 个门店"></textarea>
+            <div class="actions">
+                <button class="primary" id="sendButton">发送问题</button>
+                <button class="secondary" id="fillExampleButton">填入示例问题</button>
+            </div>
+            <div class="status" id="statusText"></div>
+        </section>
+
+        <section class="result-grid">
+            <article class="result-card">
+                <header>
+                    <h3>生成 SQL</h3>
+                    <span class="hint" id="rowCountText">等待执行</span>
+                </header>
+                <pre id="sqlOutput">-- 执行后显示 SQL</pre>
+            </article>
+
+            <article class="result-card">
+                <header>
+                    <h3>查询结果</h3>
+                    <span class="hint">结果表格</span>
+                </header>
+                <div id="tableContainer" class="empty">还没有结果，先问个问题试试。</div>
+            </article>
+        </section>
+    </main>
+</div>
+
+<script>
+    const identities = [
+        { label: "华东租户运营", userId: "ops-east-01", tenantId: "1", role: "USER" },
+        { label: "华南租户运营", userId: "ops-south-01", tenantId: "2", role: "USER" },
+        { label: "平台管理员", userId: "platform-admin", tenantId: "", role: "ADMIN" }
+    ];
+
+    const state = {
+        selectedIdentity: identities[0]
+    };
+
+    const identityList = document.getElementById("identityList");
+    const identitySummary = document.getElementById("identitySummary");
+    const questionInput = document.getElementById("questionInput");
+    const sendButton = document.getElementById("sendButton");
+    const fillExampleButton = document.getElementById("fillExampleButton");
+    const statusText = document.getElementById("statusText");
+    const sqlOutput = document.getElementById("sqlOutput");
+    const tableContainer = document.getElementById("tableContainer");
+    const rowCountText = document.getElementById("rowCountText");
+
+    function renderIdentityCards() {
+        identityList.innerHTML = "";
+        identities.forEach(identity => {
+            const card = document.createElement("button");
+            card.type = "button";
+            card.className = "identity-card" + (identity === state.selectedIdentity ? " active" : "");
+            card.innerHTML = `
+                <div class="identity-role">${identity.role}</div>
+                <div><strong>${identity.label}</strong></div>
+                <div class="meta">userId: ${identity.userId}</div>
+                <div class="meta">${identity.role === "ADMIN" ? "全局可见，无租户限制" : `租户自动注入: ${identity.tenantId}`}</div>
+            `;
+            card.addEventListener("click", () => {
+                state.selectedIdentity = identity;
+                renderIdentityCards();
+                renderIdentitySummary();
+            });
+            identityList.appendChild(card);
+        });
+    }
+
+    function renderIdentitySummary() {
+        const current = state.selectedIdentity;
+        identitySummary.innerHTML = `
+            <div><strong>${current.label}</strong></div>
+            <div class="meta">role: ${current.role}</div>
+            <div class="meta">userId: ${current.userId}</div>
+            <div class="meta">${current.role === "ADMIN" ? "租户范围: 全局" : `租户范围: ${current.tenantId}`}</div>
+        `;
+    }
+
+    function setStatus(message, type = "") {
+        statusText.textContent = message;
+        statusText.className = "status" + (type ? ` ${type}` : "");
+    }
+
+    function renderTable(rows) {
+        if (!rows || rows.length === 0) {
+            tableContainer.className = "empty";
+            tableContainer.textContent = "查询成功，但没有返回数据。";
+            return;
+        }
+
+        const columns = Object.keys(rows[0]);
+        const thead = `<thead><tr>${columns.map(column => `<th>${column}</th>`).join("")}</tr></thead>`;
+        const tbody = `<tbody>${rows.map(row => `<tr>${columns.map(column => `<td>${row[column] ?? ""}</td>`).join("")}</tr>`).join("")}</tbody>`;
+        tableContainer.className = "";
+        tableContainer.innerHTML = `<table>${thead}${tbody}</table>`;
+    }
+
+    async function submitQuestion() {
+        const question = questionInput.value.trim();
+        if (!question) {
+            setStatus("先输入一个问题。", "error");
+            return;
+        }
+
+        const current = state.selectedIdentity;
+        sendButton.disabled = true;
+        setStatus("SQL Agent 正在规划查询并执行...", "");
+        sqlOutput.textContent = "-- 生成中";
+        rowCountText.textContent = "执行中";
+
+        try {
+            const response = await fetch("/api/sql/query", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-User-Id": current.userId,
+                    "X-Tenant-Id": current.tenantId,
+                    "X-User-Role": current.role
+                },
+                body: JSON.stringify({ question })
+            });
+            const payload = await response.json();
+            if (payload.status !== "success") {
+                throw new Error(payload.message || "查询失败");
+            }
+
+            sqlOutput.textContent = payload.sql || "-- 未返回 SQL";
+            rowCountText.textContent = `${payload.rowCount} rows`;
+            renderTable(payload.rows || []);
+            setStatus(`${payload.role === "ADMIN" ? "管理员视角" : `租户 ${payload.tenantId}`} 查询成功`, "success");
+        } catch (error) {
+            sqlOutput.textContent = "-- 执行失败";
+            rowCountText.textContent = "失败";
+            tableContainer.className = "empty";
+            tableContainer.textContent = error.message;
+            setStatus(error.message, "error");
+        } finally {
+            sendButton.disabled = false;
+        }
+    }
+
+    fillExampleButton.addEventListener("click", () => {
+        questionInput.value = "帮我看下本月订单金额最高的前 5 个门店";
+        questionInput.focus();
+    });
+
+    sendButton.addEventListener("click", submitQuestion);
+    questionInput.addEventListener("keydown", event => {
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+            submitQuestion();
+        }
+    });
+
+    renderIdentityCards();
+    renderIdentitySummary();
+</script>
+</body>
+</html>

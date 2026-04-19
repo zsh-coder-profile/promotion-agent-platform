@@ -15,6 +15,7 @@
  */
 package com.example.agentscope.workflow.sqlagent.tools;
 
+import com.example.agentscope.workflow.sqlagent.SqlAccessContext;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -25,6 +26,10 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
+import java.util.Set;
+import java.util.regex.MatchResult;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -32,6 +37,17 @@ import java.util.stream.Collectors;
  * Automatically detects the database dialect (H2 / MySQL / PostgreSQL) from the DataSource JDBC URL.
  */
 public final class SqlTools {
+    private static final Pattern WHERE_PATTERN = Pattern.compile("(?i)\\bwhere\\b");
+    private static final Pattern TRAILING_CLAUSE_PATTERN =
+            Pattern.compile("(?i)\\b(group\\s+by|order\\s+by|limit|offset|fetch)\\b");
+    private static final Pattern TABLE_REFERENCE_PATTERN =
+            Pattern.compile("(?i)\\b(?:from|join)\\s+([a-zA-Z_][\\w.]*)"
+                    + "(?:\\s+(?:as\\s+)?([a-zA-Z_][\\w]*))?");
+    private static final Pattern TENANT_LITERAL_PATTERN =
+            Pattern.compile("(?i)\\b(?:[a-zA-Z_][\\w]*\\s*\\.\\s*)?tenant_id\\s*=\\s*(?:'([^']*)'|\"([^\"]*)\"|([0-9]+))");
+    private static final Set<String> SQL_KEYWORDS =
+            Set.of("where", "join", "left", "right", "inner", "outer", "full", "cross",
+                    "on", "group", "order", "limit", "offset", "fetch", "union");
 
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseDialect dialect;
@@ -102,13 +118,111 @@ public final class SqlTools {
         return sb.toString();
     }
 
-    public List<Map<String, Object>> executeQuery(String query) {
+    public List<Map<String, Object>> executeQuery(String query, SqlAccessContext accessContext) {
         validateReadOnlyQuery(query);
+        ScopedQuery scopedQuery = applyTenantIsolation(query, accessContext);
         try {
-            return jdbcTemplate.queryForList(query);
+            if (scopedQuery.args().length == 0) {
+                return jdbcTemplate.queryForList(scopedQuery.sql());
+            }
+            return jdbcTemplate.queryForList(scopedQuery.sql(), scopedQuery.args());
         } catch (Exception e) {
             throw new IllegalStateException("Failed to execute SQL query: " + e.getMessage(), e);
         }
+    }
+
+    static ScopedQuery applyTenantIsolation(String query, SqlAccessContext accessContext) {
+        if (accessContext == null || !accessContext.requiresTenantIsolation()) {
+            return new ScopedQuery(query, new Object[0]);
+        }
+        if (accessContext.tenantId() == null || accessContext.tenantId().isBlank()) {
+            throw new IllegalArgumentException("Tenant id is required for isolated queries.");
+        }
+        if (containsTenantFilter(query)) {
+            validateTenantScope(query, accessContext.tenantId());
+            return new ScopedQuery(query, new Object[0]);
+        }
+
+        String topLevelSql = maskNestedScopes(query);
+        List<String> qualifiers = TABLE_REFERENCE_PATTERN.matcher(topLevelSql)
+                .results()
+                .map(SqlTools::resolveQualifier)
+                .distinct()
+                .toList();
+        if (qualifiers.isEmpty()) {
+            throw new IllegalArgumentException("Unable to infer tenant-aware tables from SQL.");
+        }
+
+        String tenantCondition = qualifiers.stream()
+                .map(alias -> alias + ".tenant_id = ?")
+                .collect(Collectors.joining(" AND "));
+
+        MatchResult trailingClause = TRAILING_CLAUSE_PATTERN.matcher(topLevelSql).results().findFirst().orElse(null);
+        int clauseStart = trailingClause == null ? query.length() : trailingClause.start();
+        String head = query.substring(0, clauseStart).trim();
+        String tail = query.substring(clauseStart);
+        String suffix = tail.isBlank() ? "" : " " + tail.trim();
+        String scopedSql;
+        if (WHERE_PATTERN.matcher(maskNestedScopes(head)).find()) {
+            scopedSql = head + " AND " + tenantCondition + suffix;
+        } else {
+            scopedSql = head + " WHERE " + tenantCondition + suffix;
+        }
+        Object[] args = qualifiers.stream().map(alias -> accessContext.tenantId()).toArray();
+        return new ScopedQuery(scopedSql, args);
+    }
+
+    private static boolean containsTenantFilter(String query) {
+        return TENANT_LITERAL_PATTERN.matcher(query).find();
+    }
+
+    private static void validateTenantScope(String query, String tenantId) {
+        Matcher matcher = TENANT_LITERAL_PATTERN.matcher(query);
+        while (matcher.find()) {
+            String sqlTenantId = firstNonBlank(matcher.group(1), matcher.group(2), matcher.group(3));
+            if (sqlTenantId != null && !tenantId.equals(sqlTenantId.trim())) {
+                throw new IllegalArgumentException("SQL tenant scope does not match current user tenant.");
+            }
+        }
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String maskNestedScopes(String sql) {
+        StringBuilder masked = new StringBuilder(sql.length());
+        int depth = 0;
+        boolean inSingleQuote = false;
+        boolean inDoubleQuote = false;
+        for (int i = 0; i < sql.length(); i++) {
+            char ch = sql.charAt(i);
+            if (ch == '\'' && !inDoubleQuote && !isEscaped(sql, i)) {
+                inSingleQuote = !inSingleQuote;
+            } else if (ch == '"' && !inSingleQuote && !isEscaped(sql, i)) {
+                inDoubleQuote = !inDoubleQuote;
+            }
+            if (!inSingleQuote && !inDoubleQuote) {
+                if (ch == '(') {
+                    depth++;
+                } else if (ch == ')' && depth > 0) {
+                    depth--;
+                    masked.append(depth == 0 ? ch : ' ');
+                    continue;
+                }
+            }
+            masked.append(depth > 0 ? ' ' : ch);
+        }
+        return masked.toString();
+    }
+
+    private static boolean isEscaped(String sql, int index) {
+        return index > 0 && sql.charAt(index - 1) == '\\';
     }
 
     private String getTableComment(String normalizedTableName) {
@@ -155,6 +269,18 @@ public final class SqlTools {
             throw new IllegalArgumentException("Only read-only SQL queries are allowed.");
         }
     }
+
+    private static String resolveQualifier(MatchResult result) {
+        String tableName = result.group(1);
+        String alias = result.groupCount() >= 2 ? result.group(2) : null;
+        if (alias == null || SQL_KEYWORDS.contains(alias.toLowerCase(Locale.ROOT))) {
+            int dotIndex = tableName.lastIndexOf('.');
+            return dotIndex >= 0 ? tableName.substring(dotIndex + 1) : tableName;
+        }
+        return alias;
+    }
+
+    record ScopedQuery(String sql, Object[] args) {}
 
     private static DatabaseDialect detectDialect(DataSource dataSource) {
         if (dataSource == null) {

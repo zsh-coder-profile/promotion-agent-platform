@@ -32,14 +32,34 @@ public class SqlAgentService {
     /**
      * Plan SQL with the model and execute it locally without sending query results back to the LLM.
      */
-    public SqlAgentResult run(String question) {
-        Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(question).build();
+    public SqlAgentResult run(String question, SqlAccessContext accessContext) {
+        Msg userMsg = Msg.builder()
+                .role(MsgRole.USER)
+                .textContent(buildQuestionWithAccessContext(question, accessContext))
+                .build();
         Msg responseMsg = sqlAgent.call(userMsg).block();
         String rawText = responseMsg != null ? responseMsg.getTextContent() : "";
         String sql = extractSql(rawText);
-        List<Map<String, Object>> rows = sqlTools.executeQuery(sql);
+        List<Map<String, Object>> rows = sqlTools.executeQuery(sql, accessContext);
 
         return new SqlAgentResult(question, sql, rows, responseMsg);
+    }
+
+    static String buildQuestionWithAccessContext(String question, SqlAccessContext accessContext) {
+        if (accessContext == null) {
+            return question;
+        }
+        if (accessContext.isAdmin()) {
+            return question + "\n\n[系统上下文]\n当前登录用户是平台管理员，可以查看全量数据。";
+        }
+        return question
+                + "\n\n[系统上下文]\n当前登录用户: "
+                + accessContext.userId()
+                + "\n当前租户: "
+                + accessContext.tenantId()
+                + "\n生成 SQL 时，所有业务表都必须使用 tenant_id = '"
+                + accessContext.tenantId()
+                + "' 做过滤。";
     }
 
     static String extractSql(String rawText) {

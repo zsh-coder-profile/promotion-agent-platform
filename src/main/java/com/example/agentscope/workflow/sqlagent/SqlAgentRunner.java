@@ -45,7 +45,9 @@ public class SqlAgentRunner {
         log.info("Running SQL agent demo...");
         try {
             SqlAgentService.SqlAgentResult result =
-                    sqlAgentService.run("Which genre on average has the longest tracks?");
+                    sqlAgentService.run(
+                            "Which genre on average has the longest tracks?",
+                            SqlAccessContext.admin("demo-runner"));
             log.info("Question: {}", result.question());
             log.info("SQL: {}", result.sql());
             log.info("Rows: {}", result.rows());
