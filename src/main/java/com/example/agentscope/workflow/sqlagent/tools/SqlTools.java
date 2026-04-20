@@ -80,10 +80,10 @@ public final class SqlTools {
 
     @Tool(
             name = "sql_db_schema",
-            description = "输入为逗号分隔的表名列表，输出为这些表的结构定义、表注释和字段注释，不包含真实数据。"
+            description = "输入为逗号分隔的表名列表，必须一次性传入本次查询所需的全部表名。输出为这些表的结构定义、表注释和字段注释，不包含真实数据。不要把表拆成多次调用。"
     )
     public String getSchema(
-            @ToolParam(name = "tableNames", description = "逗号分隔的表名")
+            @ToolParam(name = "tableNames", description = "一次性包含全部目标表名的逗号分隔列表")
             String tableNames) {
         String[] tables = tableNames.split(",");
         StringBuilder sb = new StringBuilder();

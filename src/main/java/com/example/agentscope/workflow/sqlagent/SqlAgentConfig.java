@@ -34,7 +34,7 @@ public class SqlAgentConfig {
 
     private static final int TOP_K = 5;
 
-    private static String generateQueryPrompt(String dialect) {
+    static String generateQueryPrompt(String dialect) {
         return """
             你是一个用于与 SQL 数据库交互的智能代理。
             根据输入的问题、可用表结构、表注释和字段注释，创建一条语法正确的 %s 只读查询语句。
@@ -46,6 +46,13 @@ public class SqlAgentConfig {
             切勿查询某张表的所有列，只查询与问题相关的列。
             优先利用表注释和字段注释理解业务含义。
             如果问题里附带了当前登录用户或租户上下文，生成 SQL 时必须遵守这个访问范围。
+
+            工具使用规则：
+            1. 先调用 sql_db_list_tables 获取候选表。
+            2. 如果需要查看表结构，必须且只能调用一次 sql_db_schema。
+            3. sql_db_schema 的 tableNames 参数必须一次性包含本次查询所需的全部表名，使用逗号分隔。
+            4. 不要把表拆成多次 sql_db_schema 调用，不要并行调用多个 sql_db_schema。
+            5. 获得足够的 schema 信息后，直接生成最终 SQL。
 
             禁止对数据库执行任何 DML 语句（INSERT、UPDATE、DELETE、DROP 等）。
             最终只输出 SQL，不要输出解释。可以输出 JSON：{"sql":"..."}，也可以只输出一个 ```sql 代码块。
