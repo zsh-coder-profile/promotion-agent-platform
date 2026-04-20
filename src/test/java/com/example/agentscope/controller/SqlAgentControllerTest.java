@@ -26,7 +26,8 @@ class SqlAgentControllerTest {
                 "本月订单数",
                 "SELECT count(*) AS order_count FROM orders WHERE tenant_id = 'tenant-a'",
                 List.of(Map.of("order_count", 12)),
-                Msg.builder().role(MsgRole.ASSISTANT).textContent("ok").build());
+                Msg.builder().role(MsgRole.ASSISTANT).textContent("ok").build(),
+                "");
         when(service.run(eq("本月订单数"), eq(SqlAccessContext.tenantUser("user-a", "tenant-a"))))
                 .thenReturn(result);
 
@@ -49,7 +50,8 @@ class SqlAgentControllerTest {
                 "全局订单数",
                 "SELECT count(*) AS order_count FROM orders",
                 List.of(Map.of("order_count", 20)),
-                Msg.builder().role(MsgRole.ASSISTANT).textContent("ok").build());
+                Msg.builder().role(MsgRole.ASSISTANT).textContent("ok").build(),
+                "");
         when(service.run(eq("全局订单数"), eq(SqlAccessContext.admin("admin-user"))))
                 .thenReturn(result);
 
@@ -62,5 +64,30 @@ class SqlAgentControllerTest {
         assertEquals("success", response.get("status"));
         assertEquals(1, response.get("rowCount"));
         verify(service).run("全局订单数", SqlAccessContext.admin("admin-user"));
+    }
+
+    @Test
+    void queryReturnsFriendlyMessageForOutOfScopeQuestion() {
+        SqlAgentService service = mock(SqlAgentService.class);
+        SqlAgentController controller = new SqlAgentController(service);
+        SqlAgentResult result = new SqlAgentResult(
+                "你会写 Java 吗",
+                "",
+                List.of(),
+                Msg.builder().role(MsgRole.ASSISTANT).textContent(SqlAgentService.OUT_OF_SCOPE_REPLY).build(),
+                SqlAgentService.OUT_OF_SCOPE_REPLY);
+        when(service.run(eq("你会写 Java 吗"), eq(SqlAccessContext.admin("admin-user"))))
+                .thenReturn(result);
+
+        Map<String, Object> response = controller.query(
+                Map.of("question", "你会写 Java 吗"),
+                "admin-user",
+                "tenant-a",
+                "ADMIN");
+
+        assertEquals("success", response.get("status"));
+        assertEquals("", response.get("sql"));
+        assertEquals(0, response.get("rowCount"));
+        assertEquals(SqlAgentService.OUT_OF_SCOPE_REPLY, response.get("message"));
     }
 }

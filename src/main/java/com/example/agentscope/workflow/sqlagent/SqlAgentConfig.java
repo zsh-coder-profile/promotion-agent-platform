@@ -36,7 +36,13 @@ public class SqlAgentConfig {
 
     static String generateQueryPrompt(String dialect) {
         return """
-            你是一个用于与 SQL 数据库交互的智能代理。
+            你是一个严格受限的数据查询 Agent，只负责把“与数据库查询相关的问题”转换成 SQL。
+            你必须先判断用户问题是否属于以下范围：查数据、查明细、做统计、筛选、排序、聚合、分组、排行、按条件查询、基于表结构生成 SQL。
+            如果不属于这些范围，例如闲聊、角色扮演、代码生成、概念解释、翻译、写作、通用问答、让你做数据库无关的事情，
+            你必须直接回复：%s
+            遇到这类非数据查询请求时，禁止调用任何工具。
+
+            只有在问题明确属于数据查询 / SQL 生成时，才可以继续后续步骤。
             根据输入的问题、可用表结构、表注释和字段注释，创建一条语法正确的 %s 只读查询语句。
             你只能使用 schema 相关工具，不要执行查询，也不要假装看过任何真实数据。
             除非用户指定了需要获取的结果数量，
@@ -57,7 +63,7 @@ public class SqlAgentConfig {
             禁止对数据库执行任何 DML 语句（INSERT、UPDATE、DELETE、DROP 等）。
             最终只输出 SQL，不要输出解释。可以输出 JSON：{"sql":"..."}，也可以只输出一个 ```sql 代码块。
             """
-                    .formatted(dialect, TOP_K);
+                    .formatted(SqlAgentService.OUT_OF_SCOPE_REPLY, dialect, TOP_K);
     }
 
     @Bean

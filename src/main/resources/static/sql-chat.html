@@ -384,10 +384,10 @@
         statusText.className = "status" + (type ? ` ${type}` : "");
     }
 
-    function renderTable(rows) {
+    function renderTable(rows, emptyMessage = "查询成功，但没有返回数据。") {
         if (!rows || rows.length === 0) {
             tableContainer.className = "empty";
-            tableContainer.textContent = "查询成功，但没有返回数据。";
+            tableContainer.textContent = emptyMessage;
             return;
         }
 
@@ -427,10 +427,15 @@
                 throw new Error(payload.message || "查询失败");
             }
 
-            sqlOutput.textContent = payload.sql || "-- 未返回 SQL";
+            const friendlyMessage = payload.message || "";
+            const hasSql = Boolean(payload.sql && payload.sql.trim());
+            sqlOutput.textContent = hasSql ? payload.sql : "-- 未返回 SQL";
             rowCountText.textContent = `${payload.rowCount} rows`;
-            renderTable(payload.rows || []);
-            setStatus(`${payload.role === "ADMIN" ? "管理员视角" : `租户 ${payload.tenantId}`} 查询成功`, "success");
+            renderTable(payload.rows || [], friendlyMessage || "查询成功，但没有返回数据。");
+            setStatus(
+                friendlyMessage || `${payload.role === "ADMIN" ? "管理员视角" : `租户 ${payload.tenantId}`} 查询成功`,
+                "success"
+            );
         } catch (error) {
             sqlOutput.textContent = "-- 执行失败";
             rowCountText.textContent = "失败";

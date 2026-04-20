@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -97,5 +98,26 @@ class SqlAgentServiceTest {
         assertTrue(prompt.getTextContent().contains("tenant-a"));
         assertTrue(prompt.getTextContent().contains("tenant_id"));
         assertTrue(prompt.getTextContent().contains("查询今天订单数"));
+    }
+
+    @Test
+    void runDoesNotExecuteSqlWhenAgentRejectsOutOfScopeQuestion() {
+        ReActAgent agent = mock(ReActAgent.class);
+        SqlTools sqlTools = mock(SqlTools.class);
+        Msg response = Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .textContent(SqlAgentService.OUT_OF_SCOPE_REPLY)
+                .build();
+        when(agent.call(any(Msg.class))).thenReturn(Mono.just(response));
+
+        SqlAgentService service = new SqlAgentService(agent, sqlTools);
+
+        SqlAgentService.SqlAgentResult result = service.run("你会写 Java 吗", SqlAccessContext.admin("admin-user"));
+
+        assertEquals("", result.sql());
+        assertTrue(result.rows().isEmpty());
+        assertEquals(SqlAgentService.OUT_OF_SCOPE_REPLY, result.message());
+        assertSame(response, result.rawMsg());
+        verify(sqlTools, never()).executeQuery(any(), any());
     }
 }

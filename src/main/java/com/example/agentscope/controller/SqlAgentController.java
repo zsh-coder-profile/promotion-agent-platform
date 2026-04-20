@@ -41,6 +41,9 @@ public class SqlAgentController {
             result.put("sql", agentResult.sql());
             result.put("rows", agentResult.rows());
             result.put("rowCount", agentResult.rows().size());
+            if (agentResult.message() != null && !agentResult.message().isBlank()) {
+                result.put("message", agentResult.message());
+            }
             result.put("userId", accessContext.userId());
             result.put("role", accessContext.role());
             result.put("tenantId", accessContext.tenantId());

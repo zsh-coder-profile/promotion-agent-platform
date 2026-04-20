@@ -20,6 +20,8 @@ public class SqlAgentService {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Pattern SQL_BLOCK =
             Pattern.compile("```sql\\s*(.*?)\\s*```", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    public static final String OUT_OF_SCOPE_REPLY =
+            "我只是一个数据查询 Agent，只能帮助你生成数据库查询 SQL，请提出与数据查询相关的问题。";
 
     private final ReActAgent sqlAgent;
     private final SqlTools sqlTools;
@@ -39,10 +41,13 @@ public class SqlAgentService {
                 .build();
         Msg responseMsg = sqlAgent.call(userMsg).block();
         String rawText = responseMsg != null ? responseMsg.getTextContent() : "";
+        if (isOutOfScopeReply(rawText)) {
+            return new SqlAgentResult(question, "", List.of(), responseMsg, OUT_OF_SCOPE_REPLY);
+        }
         String sql = extractSql(rawText);
         List<Map<String, Object>> rows = sqlTools.executeQuery(sql, accessContext);
 
-        return new SqlAgentResult(question, sql, rows, responseMsg);
+        return new SqlAgentResult(question, sql, rows, responseMsg, "");
     }
 
     static String buildQuestionWithAccessContext(String question, SqlAccessContext accessContext) {
@@ -90,9 +95,14 @@ public class SqlAgentService {
         }
     }
 
+    private static boolean isOutOfScopeReply(String rawText) {
+        return rawText != null && OUT_OF_SCOPE_REPLY.equals(rawText.trim());
+    }
+
     public record SqlAgentResult(
             String question,
             String sql,
             List<Map<String, Object>> rows,
-            Msg rawMsg) {}
+            Msg rawMsg,
+            String message) {}
 }
