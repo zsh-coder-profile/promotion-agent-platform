@@ -28,4 +28,5 @@ public class ModelConfig {
                 .baseUrl(baseUrl)
                 .build();
     }
+
 }

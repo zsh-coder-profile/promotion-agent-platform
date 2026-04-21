@@ -3,6 +3,7 @@ package com.example.agentscope.controller;
 import com.example.agentscope.workflow.sqlagent.SqlAccessContext;
 import com.example.agentscope.workflow.sqlagent.SqlAgentService;
 import com.example.agentscope.workflow.sqlagent.SqlAgentService.SqlAgentResult;
+import com.example.agentscope.workflow.sqlagent.memory.ToolUsageMemorySearchResult;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,11 @@ class SqlAgentControllerTest {
                 "SELECT count(*) AS order_count FROM orders WHERE tenant_id = 'tenant-a'",
                 List.of(Map.of("order_count", 12)),
                 Msg.builder().role(MsgRole.ASSISTANT).textContent("ok").build(),
-                "");
+                "",
+                List.of(new ToolUsageMemorySearchResult("历史问题", "sql_db_schema", Map.of("tableNames", "orders"), 0.9d, null)),
+                true,
+                true,
+                List.of());
         when(service.run(eq("本月订单数"), eq(SqlAccessContext.tenantUser("user-a", "tenant-a"))))
                 .thenReturn(result);
 
@@ -39,6 +44,9 @@ class SqlAgentControllerTest {
 
         assertEquals("success", response.get("status"));
         assertEquals(1, response.get("rowCount"));
+        assertEquals(1, response.get("memoryHits"));
+        assertEquals(true, response.get("memoryApplied"));
+        assertEquals(true, response.get("memorySaved"));
         verify(service).run("本月订单数", SqlAccessContext.tenantUser("user-a", "tenant-a"));
     }
 
@@ -51,7 +59,11 @@ class SqlAgentControllerTest {
                 "SELECT count(*) AS order_count FROM orders",
                 List.of(Map.of("order_count", 20)),
                 Msg.builder().role(MsgRole.ASSISTANT).textContent("ok").build(),
-                "");
+                "",
+                List.of(),
+                false,
+                false,
+                List.of());
         when(service.run(eq("全局订单数"), eq(SqlAccessContext.admin("admin-user"))))
                 .thenReturn(result);
 
@@ -63,6 +75,7 @@ class SqlAgentControllerTest {
 
         assertEquals("success", response.get("status"));
         assertEquals(1, response.get("rowCount"));
+        assertEquals(0, response.get("memoryHits"));
         verify(service).run("全局订单数", SqlAccessContext.admin("admin-user"));
     }
 
@@ -75,7 +88,11 @@ class SqlAgentControllerTest {
                 "",
                 List.of(),
                 Msg.builder().role(MsgRole.ASSISTANT).textContent(SqlAgentService.OUT_OF_SCOPE_REPLY).build(),
-                SqlAgentService.OUT_OF_SCOPE_REPLY);
+                SqlAgentService.OUT_OF_SCOPE_REPLY,
+                List.of(),
+                false,
+                false,
+                List.of());
         when(service.run(eq("你会写 Java 吗"), eq(SqlAccessContext.admin("admin-user"))))
                 .thenReturn(result);
 

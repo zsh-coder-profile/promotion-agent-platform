@@ -41,6 +41,9 @@ public class SqlAgentController {
             result.put("sql", agentResult.sql());
             result.put("rows", agentResult.rows());
             result.put("rowCount", agentResult.rows().size());
+            result.put("memoryHits", agentResult.memoryHitCount());
+            result.put("memoryApplied", agentResult.memoryApplied());
+            result.put("memorySaved", agentResult.memorySaved());
             if (agentResult.message() != null && !agentResult.message().isBlank()) {
                 result.put("message", agentResult.message());
             }

@@ -39,5 +39,16 @@ spring:
 workflow:
   sql:
     enabled: true
+    memory:
+      embedding:
+        base-url: http://127.0.0.1:11434
+        api-key: dummy
+        model-name: nomic-embed-text
+        dimensions: ${OLLAMA_EMBED_DIMENSIONS:768}
+      pgvector:
+        url: ${SQL_MEMORY_PGVECTOR_URL:jdbc:postgresql://127.0.0.1:15432/postgres?currentSchema=public}
+        username: ${SQL_MEMORY_PGVECTOR_USERNAME:postgres}
+        password: ${SQL_MEMORY_PGVECTOR_PASSWORD:postgres}
+        table-name: ${SQL_MEMORY_PGVECTOR_TABLE:sql_tool_usage_memory}
   runner:
     enabled: false

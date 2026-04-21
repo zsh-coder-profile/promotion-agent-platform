@@ -16,6 +16,7 @@
 package com.example.agentscope.workflow.sqlagent.tools;
 
 import com.example.agentscope.workflow.sqlagent.SqlAccessContext;
+import com.example.agentscope.workflow.sqlagent.memory.SqlToolUsageRecorder;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -37,6 +38,7 @@ import java.util.stream.Collectors;
  * Automatically detects the database dialect (H2 / MySQL / PostgreSQL) from the DataSource JDBC URL.
  */
 public final class SqlTools {
+    private static final String TOOL_USAGE_MEMORY_TABLE = "sql_tool_usage_memory";
     private static final Pattern WHERE_PATTERN = Pattern.compile("(?i)\\bwhere\\b");
     private static final Pattern TRAILING_CLAUSE_PATTERN =
             Pattern.compile("(?i)\\b(group\\s+by|order\\s+by|limit|offset|fetch)\\b");
@@ -51,15 +53,24 @@ public final class SqlTools {
 
     private final JdbcTemplate jdbcTemplate;
     private final DatabaseDialect dialect;
+    private final SqlToolUsageRecorder toolUsageRecorder;
 
     public SqlTools(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.dialect = detectDialect(jdbcTemplate.getDataSource());
+        this(jdbcTemplate, detectDialect(jdbcTemplate.getDataSource()), new SqlToolUsageRecorder());
     }
 
     public SqlTools(JdbcTemplate jdbcTemplate, DatabaseDialect dialect) {
+        this(jdbcTemplate, dialect, new SqlToolUsageRecorder());
+    }
+
+    public SqlTools(JdbcTemplate jdbcTemplate, SqlToolUsageRecorder toolUsageRecorder) {
+        this(jdbcTemplate, detectDialect(jdbcTemplate.getDataSource()), toolUsageRecorder);
+    }
+
+    public SqlTools(JdbcTemplate jdbcTemplate, DatabaseDialect dialect, SqlToolUsageRecorder toolUsageRecorder) {
         this.jdbcTemplate = jdbcTemplate;
         this.dialect = dialect;
+        this.toolUsageRecorder = toolUsageRecorder;
     }
 
     public DatabaseDialect getDialect() {
@@ -73,9 +84,12 @@ public final class SqlTools {
     public String listTables(
             @ToolParam(name = "ignored", description = "空字符串", required = false)
             String ignored) {
+        toolUsageRecorder.record("sql_db_list_tables", Map.of("ignored", ignored == null ? "" : ignored));
         List<String> tables =
                 jdbcTemplate.queryForList(dialect.listTablesSql(), String.class);
-        return String.join(", ", tables);
+        return tables.stream()
+                .filter(table -> table != null && !TOOL_USAGE_MEMORY_TABLE.equalsIgnoreCase(table.trim()))
+                .collect(Collectors.joining(", "));
     }
 
     @Tool(
@@ -85,6 +99,7 @@ public final class SqlTools {
     public String getSchema(
             @ToolParam(name = "tableNames", description = "一次性包含全部目标表名的逗号分隔列表")
             String tableNames) {
+        toolUsageRecorder.record("sql_db_schema", Map.of("tableNames", tableNames));
         String[] tables = tableNames.split(",");
         StringBuilder sb = new StringBuilder();
         for (String table : tables) {
