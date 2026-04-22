@@ -35,7 +35,6 @@ class SqlAgentServiceTest {
     @Test
     void runExecutesSqlLocallyFromJsonResponse() {
         ReActAgent agent = mock(ReActAgent.class);
-        ReActAgent directAgent = mock(ReActAgent.class);
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         SqlTools sqlTools = new SqlTools(jdbcTemplate, DatabaseDialect.POSTGRESQL);
         Msg response =
@@ -53,7 +52,7 @@ class SqlAgentServiceTest {
             return Mono.just(response);
         });
 
-        SqlAgentService service = new SqlAgentService(agent, directAgent, sqlTools, memory, recorder);
+        SqlAgentService service = new SqlAgentService(agent, sqlTools, memory, recorder);
 
         SqlAgentService.SqlAgentResult result =
                 service.run("question", SqlAccessContext.tenantUser("user-a", "tenant-a"));
@@ -82,7 +81,6 @@ class SqlAgentServiceTest {
     @Test
     void runExecutesSqlLocallyFromSqlFence() {
         ReActAgent agent = mock(ReActAgent.class);
-        ReActAgent directAgent = mock(ReActAgent.class);
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         SqlTools sqlTools = new SqlTools(jdbcTemplate, DatabaseDialect.POSTGRESQL);
         Msg response =
@@ -94,7 +92,7 @@ class SqlAgentServiceTest {
         List<Map<String, Object>> rows = List.of(Map.of("id", 1));
         when(jdbcTemplate.queryForList("SELECT * FROM users LIMIT 5")).thenReturn(rows);
 
-        SqlAgentService service = new SqlAgentService(agent, directAgent, sqlTools, mock(ToolUsageMemory.class), new SqlToolUsageRecorder());
+        SqlAgentService service = new SqlAgentService(agent, sqlTools, mock(ToolUsageMemory.class), new SqlToolUsageRecorder());
 
         SqlAgentService.SqlAgentResult result =
                 service.run("question", SqlAccessContext.admin("admin-user"));
@@ -107,11 +105,10 @@ class SqlAgentServiceTest {
     @Test
     void runAddsTenantGuidanceToPromptForNormalUsers() {
         ReActAgent agent = mock(ReActAgent.class);
-        ReActAgent directAgent = mock(ReActAgent.class);
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         SqlTools sqlTools = new SqlTools(jdbcTemplate, DatabaseDialect.POSTGRESQL);
         Msg response = Msg.builder().role(MsgRole.ASSISTANT).textContent("SELECT order_count FROM orders LIMIT 1").build();
-        when(directAgent.call(any(Msg.class))).thenReturn(Mono.just(response));
+        when(agent.call(any(Msg.class))).thenReturn(Mono.just(response));
         when(jdbcTemplate.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
         ToolUsageMemory memory = mock(ToolUsageMemory.class);
         when(memory.searchSimilarUsage(eq("查询今天订单数"), eq(SqlAccessContext.tenantUser("user-a", "tenant-a")), eq(3), eq(0.2d)))
@@ -123,25 +120,25 @@ class SqlAgentServiceTest {
                                 0.85d,
                                 OffsetDateTime.now())));
 
-        SqlAgentService service = new SqlAgentService(agent, directAgent, sqlTools, memory, new SqlToolUsageRecorder());
+        SqlAgentService service = new SqlAgentService(agent, sqlTools, memory, new SqlToolUsageRecorder());
 
         service.run("查询今天订单数", SqlAccessContext.tenantUser("user-a", "tenant-a"));
 
         ArgumentCaptor<Msg> captor = ArgumentCaptor.forClass(Msg.class);
-        verify(directAgent, atLeastOnce()).call(captor.capture());
+        verify(agent, atLeastOnce()).call(captor.capture());
         Msg prompt = captor.getValue();
         assertTrue(prompt.getTextContent().contains("tenant-a"));
         assertTrue(prompt.getTextContent().contains("tenant_id"));
         assertTrue(prompt.getTextContent().contains("查询今天订单数"));
         assertTrue(prompt.getTextContent().contains("历史成功工具调用模式"));
         assertTrue(prompt.getTextContent().contains("sql_db_schema"));
-        assertTrue(prompt.getTextContent().contains("最新 schema 上下文"));
+        assertTrue(prompt.getTextContent().contains("tableNames=orders"));
+        assertTrue(!prompt.getTextContent().contains("最新 schema 上下文"));
     }
 
     @Test
     void runDoesNotExecuteSqlWhenAgentRejectsOutOfScopeQuestion() {
         ReActAgent agent = mock(ReActAgent.class);
-        ReActAgent directAgent = mock(ReActAgent.class);
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         SqlTools sqlTools = new SqlTools(jdbcTemplate, DatabaseDialect.POSTGRESQL);
         Msg response = Msg.builder()
@@ -151,7 +148,7 @@ class SqlAgentServiceTest {
         when(agent.call(any(Msg.class))).thenReturn(Mono.just(response));
         ToolUsageMemory memory = mock(ToolUsageMemory.class);
 
-        SqlAgentService service = new SqlAgentService(agent, directAgent, sqlTools, memory, new SqlToolUsageRecorder());
+        SqlAgentService service = new SqlAgentService(agent, sqlTools, memory, new SqlToolUsageRecorder());
 
         SqlAgentService.SqlAgentResult result = service.run("你会写 Java 吗", SqlAccessContext.admin("admin-user"));
 
@@ -167,9 +164,8 @@ class SqlAgentServiceTest {
     }
 
     @Test
-    void runUsesDirectAgentWhenHighConfidenceSchemaMemoryExists() {
+    void runKeepsHistoryAsHintInsteadOfPrefetchingSchema() {
         ReActAgent agent = mock(ReActAgent.class);
-        ReActAgent directAgent = mock(ReActAgent.class);
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         SqlTools sqlTools = new SqlTools(jdbcTemplate, DatabaseDialect.POSTGRESQL);
         ToolUsageMemory memory = mock(ToolUsageMemory.class);
@@ -181,25 +177,23 @@ class SqlAgentServiceTest {
                                 Map.of("tableNames", "users,coupons,user_coupons,orders"),
                                 0.55d,
                                 OffsetDateTime.now())));
-        when(jdbcTemplate.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(Map.of("id", 1)));
-        when(jdbcTemplate.queryForObject(anyString(), eq(String.class), anyString())).thenReturn("");
-        when(jdbcTemplate.queryForList(eq(DatabaseDialect.POSTGRESQL.columnsSql()), anyString()))
-                .thenReturn(List.of(Map.of("COLUMN_NAME", "id", "DATA_TYPE", "integer")));
         Msg response = Msg.builder().role(MsgRole.ASSISTANT).textContent("SELECT id FROM users LIMIT 1").build();
-        when(directAgent.call(any(Msg.class))).thenReturn(Mono.just(response));
+        when(agent.call(any(Msg.class))).thenAnswer(invocation -> {
+            Msg prompt = invocation.getArgument(0);
+            assertTrue(prompt.getTextContent().contains("历史成功工具调用模式"));
+            assertTrue(prompt.getTextContent().contains("tableNames=users,coupons,user_coupons,orders"));
+            return Mono.just(response);
+        });
+        when(jdbcTemplate.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(Map.of("id", 1)));
 
-        SqlAgentService service = new SqlAgentService(agent, directAgent, sqlTools, memory, new SqlToolUsageRecorder());
+        SqlToolUsageRecorder recorder = new SqlToolUsageRecorder();
+        SqlAgentService service = new SqlAgentService(agent, sqlTools, memory, recorder);
 
         SqlAgentService.SqlAgentResult result =
                 service.run("查询未使用优惠券", SqlAccessContext.tenantUser("user-a", "tenant-a"));
 
         assertEquals("SELECT id FROM users LIMIT 1", result.sql());
-        verify(directAgent).call(any(Msg.class));
-        verify(agent, never()).call(any(Msg.class));
-        verify(memory).saveSuccessfulUsage(
-                eq("查询未使用优惠券"),
-                eq(SqlAccessContext.tenantUser("user-a", "tenant-a")),
-                eq(List.of(new RecordedToolUsage("sql_db_schema", Map.of("tableNames", "users,coupons,user_coupons,orders")))),
-                eq("SELECT id FROM users LIMIT 1"));
+        verify(agent).call(any(Msg.class));
+        verify(memory).saveSuccessfulUsage(eq("查询未使用优惠券"), eq(SqlAccessContext.tenantUser("user-a", "tenant-a")), any(), eq("SELECT id FROM users LIMIT 1"));
     }
 }
