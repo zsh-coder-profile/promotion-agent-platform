@@ -3,6 +3,7 @@ package com.example.agentscope.controller;
 import com.example.agentscope.workflow.sqlagent.SqlAccessContext;
 import com.example.agentscope.workflow.sqlagent.SqlAgentService;
 import com.example.agentscope.workflow.sqlagent.SqlAgentService.SqlAgentResult;
+import com.example.agentscope.workflow.sqlagent.chat.SqlChatService;
 import com.example.agentscope.workflow.sqlagent.memory.ToolUsageMemorySearchResult;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -22,7 +23,8 @@ class SqlAgentControllerTest {
     @Test
     void queryBuildsTenantUserAccessContextFromHeaders() {
         SqlAgentService service = mock(SqlAgentService.class);
-        SqlAgentController controller = new SqlAgentController(service);
+        SqlChatService chatService = mock(SqlChatService.class);
+        SqlAgentController controller = new SqlAgentController(service, chatService);
         SqlAgentResult result = new SqlAgentResult(
                 "本月订单数",
                 "SELECT count(*) AS order_count FROM orders WHERE tenant_id = 'tenant-a'",
@@ -53,7 +55,8 @@ class SqlAgentControllerTest {
     @Test
     void queryBuildsAdminAccessContextFromHeaders() {
         SqlAgentService service = mock(SqlAgentService.class);
-        SqlAgentController controller = new SqlAgentController(service);
+        SqlChatService chatService = mock(SqlChatService.class);
+        SqlAgentController controller = new SqlAgentController(service, chatService);
         SqlAgentResult result = new SqlAgentResult(
                 "全局订单数",
                 "SELECT count(*) AS order_count FROM orders",
@@ -82,7 +85,8 @@ class SqlAgentControllerTest {
     @Test
     void queryReturnsFriendlyMessageForOutOfScopeQuestion() {
         SqlAgentService service = mock(SqlAgentService.class);
-        SqlAgentController controller = new SqlAgentController(service);
+        SqlChatService chatService = mock(SqlChatService.class);
+        SqlAgentController controller = new SqlAgentController(service, chatService);
         SqlAgentResult result = new SqlAgentResult(
                 "你会写 Java 吗",
                 "",

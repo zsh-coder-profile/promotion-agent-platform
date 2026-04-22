@@ -18,6 +18,7 @@ package com.example.agentscope.workflow.sqlagent;
 import com.example.agentscope.workflow.sqlagent.memory.AgentScopeToolUsageMemory;
 import com.example.agentscope.workflow.sqlagent.memory.SqlToolUsageRecorder;
 import com.example.agentscope.workflow.sqlagent.memory.ToolUsageMemory;
+import com.example.agentscope.workflow.sqlagent.chat.SqlChatSchemaInitializer;
 import com.example.agentscope.workflow.sqlagent.tools.SqlTools;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.embedding.EmbeddingModel;
@@ -111,6 +112,11 @@ public class SqlAgentConfig {
     @Bean
     public SqlToolUsageRecorder sqlToolUsageRecorder() {
         return new SqlToolUsageRecorder();
+    }
+
+    @Bean
+    public SqlChatSchemaInitializer sqlChatSchemaInitializer(JdbcTemplate jdbcTemplate) {
+        return new SqlChatSchemaInitializer(jdbcTemplate);
     }
 
     @Bean

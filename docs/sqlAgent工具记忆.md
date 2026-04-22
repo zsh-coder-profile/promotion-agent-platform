@@ -1,513 +1,403 @@
-# SQL Agent Tool-Usage Memory 改造总结
+# SQL Agent 工具记忆总结
 
-## 1. 背景与目标
+## 1. 当前目标
 
-这次改造的目标，是把 SQL Agent 从“每次都重新探索表和 schema”的固定流程，升级为具备 **tool-usage memory** 的闭环能力：
+当前这套 SQL Agent 工具记忆的目标，不是把数据库 schema 直接长期塞进 prompt，而是沉淀一类更轻量、更稳定的经验：
 
-1. 先检索历史上成功的问题与工具使用模式
-2. 命中高价值历史时，尽量缩短本次 SQL 生成链路
-3. 本次 SQL 成功执行后，把真实发生过的工具调用再次写回 memory
+- 什么问题曾经成功过
+- 当时调用了什么工具
+- 工具参数是什么
 
-最终接入的入口是：
+也就是保存：
 
-- [SqlAgentController.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/controller/SqlAgentController.java)
-- [SqlAgentService.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/SqlAgentService.java)
+`question -> toolName -> toolArgs`
 
----
+这样做的核心价值是：
 
-## 2. 最终落地后的整体设计
+1. 给 LLM 一个“历史成功模式”提示
+2. 缩小它探索候选表和工具调用路径的范围
+3. 但不把长期 memory 误当成当前实时 schema
 
-### 2.1 关键设计点
-
-这次最终落地版采用的是：
-
-- AgentScope 官方 embedding / RAG 组件
-- 独立 pgvector 向量库
-- 业务库与向量库双数据源分离
-- 服务层 shortcut + fallback 双路径编排
-- 成功后按真实工具调用写入 memory
-
-核心业务语义可以概括成一句话：
-
-**先查历史 memory，如果命中高相似 schema 模式就直接预取最新 schema 并生成 SQL；否则走原始 ReAct + 工具链路；执行成功后把本次 tool usage 写回向量库。**
+当前最新实现里，**历史命中只作为候选提示，不再由服务层自动展开最新 schema DDL**。  
+是否继续调用 `sql_db_list_tables` / `sql_db_schema`，交给 LLM 结合当前会话上下文自己决定。
 
 ---
 
-## 3. 当前真实组件结构
+## 2. 当前整体链路
 
-### 3.1 Agent 层
-
-- `sqlAgent`
-  - 带工具的 `ReActAgent`
-  - 正常 fallback 场景下会调用 `sql_db_list_tables`、`sql_db_schema`
-- `sqlDirectAgent`
-  - 无工具的 `ReActAgent`
-  - shortcut 场景下直接基于预取的最新 schema 生成 SQL
-
-相关配置在：
-
-- [SqlAgentConfig.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/SqlAgentConfig.java)
-
-### 3.2 Tool-Usage Memory 抽象
-
-- `ToolUsageMemory`
-- `AgentScopeToolUsageMemory`
-- `ToolUsageMemorySearchResult`
-- `RecordedToolUsage`
-
-相关代码在：
-
-- [AgentScopeToolUsageMemory.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/memory/AgentScopeToolUsageMemory.java)
-
-### 3.3 Tool Recorder
-
-为了只保存“真实发生过的工具调用”，增加了 recorder：
-
-- [SqlToolUsageRecorder.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/memory/SqlToolUsageRecorder.java)
-
-当前记录的工具主要是：
-
-- `sql_db_list_tables`
-- `sql_db_schema`
-
-### 3.4 SQL 工具
-
-SQL Agent 实际使用的工具定义在：
-
-- [SqlTools.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/tools/SqlTools.java)
-
-这里除了提供：
-
-- `sql_db_list_tables`
-- `sql_db_schema`
-- `executeQuery(...)`
-
-还做了两件重要的事：
-
-1. 每次 tool 调用时记录到 `SqlToolUsageRecorder`
-2. 从候选表中剔除 `sql_tool_usage_memory`，避免 memory 表干扰模型选表
-
----
-
-## 4. 双库架构
-
-现在是明确的双库架构：
-
-- 业务库：用于 SQL Agent 查 schema、执行 SQL
-- 向量库：用于存储 `sql_tool_usage_memory`
-
-对应配置在：
-
-- [application.yml](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/resources/application.yml)
-
-### 4.1 业务库
-
-通过 `spring.datasource.*` 配置，当前用于：
-
-- `SqlTools.listTables()`
-- `SqlTools.getSchema()`
-- `SqlTools.executeQuery()`
-
-### 4.2 向量库
-
-通过 `workflow.sql.memory.pgvector.*` 配置，当前用于：
-
-- `PgVectorStore`
-- `SimpleKnowledge`
-- `AgentScopeToolUsageMemory`
-
-### 4.3 Mermaid 架构图
-
-```mermaid
-flowchart LR
-    U["User / API"] --> C["SqlAgentController"]
-    C --> S["SqlAgentService"]
-
-    S --> A["sqlAgent (with tools)"]
-    S --> D["sqlDirectAgent (no tools)"]
-    S --> M["ToolUsageMemory"]
-
-    A --> T["SqlTools"]
-    D --> T
-
-    T --> BIZ["Business DB :5432"]
-    M --> K["SimpleKnowledge"]
-    K --> V["PgVectorStore"]
-    V --> MEM["Vector DB :15432"]
-```
-
----
-
-## 5. 最终请求流程
-
-### 5.1 总体流程
+### 2.1 请求流程
 
 ```mermaid
 flowchart TD
-    A["用户请求 /api/sql/query"] --> B["SqlAgentService.searchSimilarUsage"]
-    B --> C{"是否命中高相似 sql_db_schema?"}
-
-    C -- "是" --> D["根据历史 tableNames 重新拉取最新 schema"]
-    D --> E["构造带最新 schema 上下文的 prompt"]
-    E --> F["sqlDirectAgent 直接生成 SQL"]
-    F --> G["SqlTools.executeQuery"]
-    G --> H["保存 synthetic schema tool usage 到 memory"]
-    H --> I["返回结果"]
-
-    C -- "否" --> J["sqlAgent 走 ReAct + Tool"]
-    J --> K["sql_db_list_tables"]
-    K --> L["sql_db_schema"]
-    L --> M["生成 SQL"]
-    M --> N["SqlTools.executeQuery"]
-    N --> O["保存本次真实 tool usage 到 memory"]
-    O --> I
+    A["用户问题"] --> B["SqlAgentService.searchSimilarUsage"]
+    B --> C["AgentScopeToolUsageMemory 向量检索"]
+    C --> D["返回历史成功工具调用模式"]
+    D --> E["拼入 user prompt"]
+    E --> F["sqlAgent + tools"]
+    F --> G["LLM 决定是否调用 sql_db_list_tables / sql_db_schema"]
+    G --> H["生成 SQL"]
+    H --> I["SqlTools.executeQuery"]
+    I --> J["成功后保存本次 tool usage 到向量库"]
 ```
 
-### 5.2 Shortcut 时序图
+### 2.2 当前行为特点
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant S as SqlAgentService
-    participant M as ToolUsageMemory
-    participant T as SqlTools
-    participant D as sqlDirectAgent
-    participant B as Business DB
-    participant V as Vector DB
-
-    U->>S: run(question, accessContext)
-    S->>M: searchSimilarUsage(question)
-    M->>V: vector retrieve
-    V-->>M: high-score schema memory
-    M-->>S: memory hits
-    S->>T: getSchema(tableNames)
-    T->>B: fetch latest schema
-    B-->>T: schema metadata
-    T-->>S: latest schema
-    S->>D: generate SQL from latest schema
-    D-->>S: SQL
-    S->>T: executeQuery(sql)
-    T->>B: readonly SQL
-    B-->>T: rows
-    S->>M: saveSuccessfulUsage(...)
-    M->>V: addDocuments
-```
-
-### 5.3 Fallback 时序图
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant S as SqlAgentService
-    participant M as ToolUsageMemory
-    participant A as sqlAgent
-    participant R as SqlToolUsageRecorder
-    participant T as SqlTools
-    participant B as Business DB
-    participant V as Vector DB
-
-    U->>S: run(question, accessContext)
-    S->>M: searchSimilarUsage(question)
-    M->>V: vector retrieve
-    V-->>M: no strong schema hit
-    M-->>S: memory hits
-    S->>R: startSession()
-    S->>A: call(userMsg)
-    A->>T: sql_db_list_tables
-    T->>R: record(list_tables)
-    T->>B: fetch tables
-    B-->>T: tables
-    A->>T: sql_db_schema
-    T->>R: record(schema)
-    T->>B: fetch schema
-    B-->>T: schema metadata
-    A-->>S: SQL
-    S->>T: executeQuery(sql)
-    T->>B: readonly SQL
-    B-->>T: rows
-    S->>R: stopSession()
-    S->>M: saveSuccessfulUsage(recordedToolUsages)
-    M->>V: addDocuments
-```
+- 会先做向量检索
+- 命中的历史模式会被格式化进 prompt
+- 不再自动注入 schema DDL
+- 不再自动切换到无工具 agent
+- 当前会话里如果已经有 schema tool result，LLM 可以直接复用
+- 当前会话里如果没有足够 schema 信息，LLM 仍需自己调用 `sql_db_schema`
 
 ---
 
-## 6. 核心实现说明
+## 3. 关键组件
 
-### 6.1 `SqlAgentService`
-
-文件：
+### 3.1 服务层
 
 - [SqlAgentService.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/SqlAgentService.java)
 
-关键能力：
+职责：
 
-1. `run(...)` 开头先检索 memory
-2. 对命中的 `sql_db_schema` 结果做阈值判断
-3. 高相似命中时走 `runWithPrefetchedSchema(...)`
-4. 否则走 `runWithTools(...)`
-5. SQL 成功执行后再保存 memory
+- 检索历史工具调用模式
+- 把命中结果拼进 prompt
+- 让 `sqlAgent` 自己决定后续 tool 调用
+- SQL 成功执行后保存本次工具调用
 
-当前用到的阈值：
+### 3.2 工具记忆层
+
+- [AgentScopeToolUsageMemory.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/memory/AgentScopeToolUsageMemory.java)
+
+职责：
+
+- `searchSimilarUsage(...)`
+- `saveSuccessfulUsage(...)`
+
+内部依赖：
+
+- AgentScope `Knowledge`
+- AgentScope `SimpleKnowledge`
+- AgentScope `PgVectorStore`
+
+### 3.3 工具调用记录器
+
+- [SqlToolUsageRecorder.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/memory/SqlToolUsageRecorder.java)
+
+职责：
+
+- 在一次请求里记录真实发生的 tool 调用
+- 当前主要记录：
+  - `sql_db_list_tables`
+  - `sql_db_schema`
+
+### 3.4 SQL 工具
+
+- [SqlTools.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/tools/SqlTools.java)
+
+职责：
+
+- 暴露 `sql_db_list_tables`
+- 暴露 `sql_db_schema`
+- 本地执行 SQL
+- 强制租户隔离
+- 调用 recorder 记录 tool usage
+
+---
+
+## 4. 向量检索怎么做
+
+### 4.1 向量化对象是什么
+
+当前向量化的主体，是每条成功的工具调用 document。
+
+在 [AgentScopeToolUsageMemory.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/memory/AgentScopeToolUsageMemory.java) 里，每一条 `RecordedToolUsage` 最终会写成一条 `Document`，其中核心 payload 包括：
+
+- `question`
+- `toolName`
+- `toolArgsJson`
+- `tenantId`
+- `userId`
+- `userRole`
+- `requestId`
+- `executedSql`
+- `createdAt`
+
+但真正作为 embedding 主文本的，是：
+
+- `question`
+
+也就是说，当前检索的核心是：
+
+**根据“问题文本”的语义相似度，召回历史成功工具调用记录。**
+
+### 4.2 检索参数
+
+当前检索参数定义在 [SqlAgentService.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/SqlAgentService.java)：
 
 - `MEMORY_SEARCH_LIMIT = 3`
 - `MEMORY_SIMILARITY_THRESHOLD = 0.2`
-- `MEMORY_SCHEMA_PREFETCH_THRESHOLD = 0.4`
 
-### 6.2 `SqlToolUsageRecorder`
+最终传给 AgentScope 的是：
 
-第一版 recorder 用的是 `InheritableThreadLocal`，后来发现 AgentScope 工具执行存在切线程场景，导致：
+```java
+RetrieveConfig config = RetrieveConfig.builder()
+        .limit(limit)
+        .scoreThreshold(similarityThreshold)
+        .build();
+```
 
-- 工具明明执行了
-- `record(...)` 也被调到了
-- 但会话里的记录丢失
+也就是：
 
-最终改成了显式 session 模式：
+- 最多召回 3 条
+- 分数低于 0.2 的不要
 
-- `startSession()` 返回 `sessionId`
-- `stopSession(sessionId)` 获取并清理记录
-- `clearSession(sessionId)` 异常清理
+### 4.3 检索后还有一层过滤
 
-底层使用：
+向量库召回后，不会直接全部拿来用，还会经过：
 
-- `ConcurrentHashMap<String, List<RecordedToolUsage>>`
-- `AtomicReference<String> activeSessionId`
+- 租户范围过滤
 
-这样解决了“工具实际调用了，但保存阶段拿不到记录”的问题。
+对应代码在 [AgentScopeToolUsageMemory.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/memory/AgentScopeToolUsageMemory.java) 的 `matchesAccessScope(...)`。
 
-### 6.3 `AgentScopeToolUsageMemory`
+规则是：
 
-这一层最终没有继续自写 embedding / pgvector SQL，而是尽量贴近 AgentScope 官方实现。
+- 管理员可看全部
+- 普通租户用户只能命中本租户 memory
 
-当前依赖的是：
+所以当前实际流程是：
 
-- `EmbeddingModel`
-- `PgVectorStore`
-- `SimpleKnowledge`
-
-也就是说：
-
-- 检索时：`knowledge.retrieve(question, config)`
-- 保存时：`knowledge.addDocuments(documents)`
-
-当前每条 `RecordedToolUsage` 会存成一条 `Document`，所以：
-
-- 一次请求调了 2 个工具
-- 向量表里就会新增 2 条记录
-
-这和你在实际日志里看到的现象一致。
-
-### 6.4 `SqlTools`
-
-这里的关键职责有四个：
-
-1. 暴露 `sql_db_list_tables`
-2. 暴露 `sql_db_schema`
-3. 执行本地只读 SQL
-4. 强制租户隔离
-
-其中租户隔离逻辑保证了：
-
-- 非管理员请求必须按当前 `tenant_id` 访问
-- 如果 SQL 中自己写了 `tenant_id`，还会校验是否与当前用户租户一致
+`向量召回 -> scoreThreshold 过滤 -> tenant 过滤 -> 返回给服务层`
 
 ---
 
-## 7. 当前配置说明
+## 5. 分块策略
 
-### 7.1 业务库配置
+这里的“分块”不是传统 RAG 里把一大段文档切成多个 chunk，而是：
 
-```yaml
-spring:
-  datasource:
-    driver-class-name: org.postgresql.Driver
-    username: postgres
-    password: postgres
-    url: jdbc:postgresql://127.0.0.1:5432/postgres?currentSchema=haagen_dazs
-```
+**把一次成功请求里的每个工具调用单独存成一条 document。**
 
-### 7.2 向量库配置
+### 5.1 当前分块单位
 
-```yaml
-workflow:
-  sql:
-    memory:
-      pgvector:
-        url: jdbc:postgresql://127.0.0.1:15432/postgres?currentSchema=public
-        username: postgres
-        password: postgres
-        table-name: sql_tool_usage_memory
-```
+当前最小分块单位是：
 
-### 7.3 Ollama embedding 配置
+- 一次 `RecordedToolUsage`
 
-```yaml
-workflow:
-  sql:
-    memory:
-      embedding:
-        base-url: http://127.0.0.1:11434
-        api-key: dummy
-        model-name: nomic-embed-text
-        dimensions: 768
-```
+例如一次请求里发生了：
 
-这里特别要注意：
+1. `sql_db_list_tables`
+2. `sql_db_schema(tableNames=users,coupons,user_coupons,orders)`
 
-- `dimensions` 必须和 embedding 模型实际输出维度一致
-- 这次落地里，`nomic-embed-text` 实际返回的是 `768`
+那么最终会写入 2 条向量记录，而不是 1 条大记录。
 
-如果向量表曾经按错误维度创建过，比如 `1024`，就需要在向量库里删表重建：
+### 5.2 为什么这样切
 
-```sql
-DROP TABLE IF EXISTS sql_tool_usage_memory;
-```
+这样切有几个好处：
 
-然后重启应用，让 `PgVectorStore` 按正确维度重新建表。
+1. 检索更细粒度
+不同工具调用可以独立命中，不会被绑成一整坨。
+
+2. 保存简单
+无需设计复杂 chunk 结构，也不需要额外切分算法。
+
+3. 后续扩展容易
+未来如果要：
+- 对 `sql_db_schema` 和 `sql_db_list_tables` 设不同权重
+- 只看某一类 tool
+- 做 tool 级别去重
+
+都比较容易。
+
+### 5.3 当前分块策略的代价
+
+也有明显代价：
+
+1. 同一个问题会产生多条近似记录
+比如重复问同一个问题多次，向量库里会积累很多结构几乎一样的 tool usage。
+
+2. `sql_db_schema` 容易重复
+如果历史上很多次都用了同一组 `tableNames`，检索结果里可能会出现多条语义相近、参数相同的命中。
+
+3. 当前没有显式去重层
+目前 `searchSimilarUsage(...)` 返回什么，服务层就直接格式化成 `[历史成功工具调用模式]`，所以日志或 prompt 里可能出现重复模式。
 
 ---
 
-## 8. 当前日志如何解读
+## 6. 为什么不再把 schema DDL 打进 prompt
 
-### 8.1 检索成功但没命中
+这是这次逻辑调整里最关键的一点。
+
+之前的方案是：
+
+- 命中高相似 `sql_db_schema`
+- 服务层主动用历史 `tableNames` 拉一遍最新 schema
+- 再把整段 DDL/字段说明塞进 prompt
+
+这个方案的问题是：
+
+1. prompt 很大
+一组常用表的 schema 往往就很长，多轮对话里重复注入尤其浪费 token。
+
+2. 容易和会话历史重复
+如果当前 agent 会话里前一轮已经调用过 `sql_db_schema`，那这段 schema 其实已经在上下文里了。
+
+3. 服务层接管太多
+本来应该由 LLM 基于上下文判断“需不需要再查 schema”，结果变成服务层提前帮它做了。
+
+现在改成：
+
+- 历史命中只给“历史成功工具调用模式”
+- 不再自动展开最新 schema DDL
+- 是否再次查 schema，由 LLM 结合当前会话上下文自己判断
+
+这更符合你当前想要的目标：
+
+**在同一会话里，前面已经拿到的 schema 可以复用；跨会话的长期 memory 只负责给方向，不直接替代实时 schema。**
+
+---
+
+## 7. 当前优化点
+
+### 7.1 已完成的优化
+
+#### 1. 从规则匹配升级到 embedding + pgvector
+
+之前是规则相似度，现在是：
+
+- embedding 模型生成向量
+- `PgVectorStore` 存储与检索
+- AgentScope `Knowledge.retrieve(...)` 做向量召回
+
+这让“相近问题”的召回能力更稳定。
+
+#### 2. 双库架构拆分
+
+现在区分：
+
+- 业务库：查 schema / 执行 SQL
+- 向量库：存 `sql_tool_usage_memory`
+
+这样不会让向量库逻辑污染业务库。
+
+#### 3. 记录真实工具调用
+
+保存 memory 时不靠猜，而是记录实际发生过的：
+
+- `sql_db_list_tables`
+- `sql_db_schema`
+
+这样 memory 更可信。
+
+#### 4. 不再自动注入 schema DDL
+
+这是当前最重要的 prompt 优化：
+
+- 降 token
+- 降重复
+- 保留 LLM 的工具决策能力
+
+### 7.2 当前还可以继续做的优化
+
+#### 1. 结果去重
+
+当前向量库里很可能有：
+
+- 相同 question
+- 相同 toolName
+- 相同 toolArgs
+
+的重复记录。
+
+可以增加一层：
+
+- 写入前去重
+- 或检索后去重
+
+建议优先做：
+
+`question + toolName + normalized(toolArgs)` 去重
+
+#### 2. schema 类工具单独聚合
+
+当前 `sql_db_schema` 是一条一条存的，后续可以考虑把它进一步抽象成：
+
+- `relevantTablesPattern`
+
+也就是把“问题 -> 常用表集合”单独做成一种更稳定的 memory，而不是混在所有 tool usage 里。
+
+#### 3. 检索重排
+
+现在主要依赖向量分数。后续可以做轻量 re-rank，例如：
+
+- 相同租户优先
+- `sql_db_schema` 优先于 `sql_db_list_tables`
+- 参数更完整的命中优先
+- 更新更近的记录优先
+
+#### 4. query 文本规范化
+
+当前 embedding 的主体是原始 question。后续可以先做轻量规范化，例如：
+
+- 去掉多余空白
+- 统一引号
+- 规范“找出/查询/看一下”这类低信息词
+
+这样能提升相近问法的稳定召回。
+
+#### 5. 命中结果压缩
+
+现在 prompt 中的历史模式是：
 
 ```text
-Searching SQL tool usage memory ...
-SQL tool usage memory search completed, retrievedDocuments=0, filteredResults=0
+- 问题: ...
+- 工具: ...
+- 参数: ...
+- 相似度: ...
 ```
 
-说明：
+后续可以压成更短格式，例如只保留：
 
-- embedding 正常
-- pgvector 检索正常
-- 只是当前没有命中历史数据
+- 工具名
+- 关键参数
+- 相似度
 
-### 8.2 保存成功
-
-```text
-Saving SQL tool usage memory ..., toolUsageCount=2
-Saved SQL tool usage memory successfully ...
-```
-
-说明：
-
-- 本次请求里记录到了 2 次工具调用
-- 已经成功写入向量库
-- 向量表里出现 2 条记录是正常现象
-
-### 8.3 维度不一致
-
-```text
-Embedding dimension mismatch: expected=1024, actual=768
-```
-
-说明：
-
-- 配置维度和模型实际输出维度不一致
-- 需要对齐 `workflow.sql.memory.embedding.dimensions`
-- 如果表已按错误维度建立，还要删表重建
-
-现在代码里已经把这类错误提示补得更直接了，会明确提醒去检查维度和重建 `sql_tool_usage_memory`
+进一步降低 token。
 
 ---
 
-## 9. 这次实际解决过的问题
+## 8. 推荐的后续优化顺序
 
-### 9.1 Memory 命中了，但 Langfuse 链路没缩短
+如果要继续优化，我建议按这个顺序做：
 
-原因：
+### 第一优先级
 
-- 第一版只是把历史模式拼进 prompt
-- prompt 仍要求必须先 `list_tables` 再 `schema`
+1. 检索结果去重
+2. 历史命中文本压缩
+3. `sql_db_schema` 单独做表集合级摘要
 
-修复：
+### 第二优先级
 
-- 服务层加 shortcut
-- 命中高相似 `sql_db_schema` 时直接预取 schema
-- 切到 `sqlDirectAgent`
+4. 加简单重排逻辑
+5. 对 question 做轻量规范化
 
-### 9.2 AgentScope tool 调用了，但 recorder 里是空
+### 第三优先级
 
-原因：
-
-- `InheritableThreadLocal` 在 AgentScope / Reactor 切线程时丢上下文
-
-修复：
-
-- recorder 改成显式 session 管理
-
-### 9.3 向量库和业务库混在一起
-
-原因：
-
-- 初版默认共用一个 `spring.datasource`
-
-修复：
-
-- 业务库继续走 `spring.datasource`
-- 向量库单独走 `workflow.sql.memory.pgvector.*`
-
-### 9.4 embedding 维度不匹配
-
-原因：
-
-- Ollama `nomic-embed-text` 返回 `768`
-- 初始默认维度配置成了 `1024`
-
-修复：
-
-- 默认维度改成 `768`
-- 文档和日志里补充了删表重建提示
+6. 持久化会话级 schema 引用
+7. 更精细的多轮追问状态管理
 
 ---
 
-## 10. 当前状态
+## 9. 当前设计的一句话总结
 
-从最新日志来看，这条链路已经真正跑通：
+当前这套 SQL Agent 工具记忆，本质上是：
 
-1. 检索 memory 成功执行
-2. 首次没命中时正常 fallback
-3. `sql_db_list_tables` / `sql_db_schema` 被 recorder 记录
-4. SQL 执行成功后写入 `sql_tool_usage_memory`
-5. 向量表中出现与 tool usage 数量一致的记录
+**用向量检索召回“历史成功工具调用模式”，把它作为候选提示交给 LLM，再由 LLM 结合当前会话上下文决定是否调用 schema 工具；成功后再把本次真实工具调用写回 pgvector。**
 
-也就是说，现在已经具备完整闭环能力：
+它不是“长期保存 schema”，而是“长期保存工具使用经验”。
 
-**检索历史 -> 生成/执行 SQL -> 成功后保存 -> 后续请求复用**
+这也是为什么它特别适合做：
 
----
+- 候选表提示
+- 工具路径提示
+- 经验复用
 
-## 11. 后续可继续优化的方向
-
-### 11.1 Shortcut 命中日志再明确一些
-
-现在已经能从结果和 Langfuse 判断 shortcut 是否生效，但可以进一步加日志，例如：
-
-- `Applying SQL memory shortcut with tableNames=...`
-- `Falling back to tool-driven SQL planning`
-
-### 11.2 提升并发隔离能力
-
-当前 recorder 已经比 `ThreadLocal` 稳定很多，但仍是“单活跃 session”模型。
-
-如果未来同一时刻存在多个 SQL 请求并发进入，可以继续升级成真正按请求隔离的多会话上下文。
-
-### 11.3 Memory 去重与压缩
-
-现在是“每个 tool usage 存一条 document”，简单直接，但数据量上来后可以考虑：
-
-- 相同问题模式去重
-- 高频 schema 模式聚合
-- 定期归档低价值记录
-
----
-
-## 12. 相关代码清单
-
-- [SqlAgentController.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/controller/SqlAgentController.java)
-- [SqlAgentConfig.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/SqlAgentConfig.java)
-- [SqlAgentService.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/SqlAgentService.java)
-- [SqlTools.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/tools/SqlTools.java)
-- [AgentScopeToolUsageMemory.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/memory/AgentScopeToolUsageMemory.java)
-- [SqlToolUsageRecorder.java](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/java/com/example/agentscope/workflow/sqlagent/memory/SqlToolUsageRecorder.java)
-- [application.yml](/Users/zhangshenghao/Documents/work_space/idea_project/agent_study/agent_scope_engine/src/main/resources/application.yml)
+而不适合直接替代当前会话里的实时 schema。*** End Patch

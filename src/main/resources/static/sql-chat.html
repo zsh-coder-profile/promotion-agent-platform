@@ -6,13 +6,16 @@
     <title>SQL Agent Chat</title>
     <style>
         :root {
-            --bg: #f6f1e8;
-            --panel: rgba(255, 252, 247, 0.9);
-            --ink: #1d1b19;
-            --muted: #70665f;
-            --line: rgba(50, 36, 22, 0.12);
-            --accent: #bf5b2c;
-            --accent-soft: #f2c38a;
+            --bg: #f4efe6;
+            --panel: rgba(255, 252, 247, 0.92);
+            --panel-strong: rgba(255, 255, 255, 0.82);
+            --ink: #1f1c18;
+            --muted: #786d64;
+            --line: rgba(70, 49, 26, 0.12);
+            --accent: #c25e2f;
+            --accent-soft: rgba(194, 94, 47, 0.12);
+            --user-bubble: #fff6ee;
+            --assistant-bubble: #ffffff;
             --success: #2d6a4f;
             --danger: #b23a48;
             --shadow: 0 20px 50px rgba(64, 41, 21, 0.12);
@@ -34,12 +37,17 @@
                     linear-gradient(135deg, #f8f4eb 0%, #efe2d0 100%);
         }
 
+        button, textarea {
+            font: inherit;
+        }
+
         .shell {
-            width: min(1200px, calc(100% - 32px));
-            margin: 32px auto;
+            width: min(1380px, calc(100% - 28px));
+            margin: 18px auto;
             display: grid;
             grid-template-columns: 320px 1fr;
-            gap: 24px;
+            gap: 20px;
+            min-height: calc(100vh - 36px);
         }
 
         .panel {
@@ -51,53 +59,60 @@
         }
 
         .sidebar {
-            padding: 24px;
-            position: sticky;
-            top: 24px;
-            height: fit-content;
+            padding: 22px;
+            display: grid;
+            gap: 18px;
+            align-content: start;
         }
 
         .eyebrow {
             color: var(--accent);
             font-size: 12px;
-            letter-spacing: 0.18em;
+            letter-spacing: 0.16em;
             text-transform: uppercase;
-            margin-bottom: 12px;
+        }
+
+        h1, h2, h3, p {
+            margin: 0;
         }
 
         h1 {
             font-size: 30px;
-            line-height: 1.05;
-            margin: 0 0 12px;
+            line-height: 1.08;
         }
 
-        .sidebar p,
         .meta,
         .hint,
-        .badge {
+        .status-meta {
             color: var(--muted);
         }
 
-        .identity-list {
+        .identity-list,
+        .conversation-list,
+        .message-list {
             display: grid;
             gap: 12px;
-            margin-top: 20px;
         }
 
-        .identity-card {
+        .identity-card,
+        .conversation-item {
+            width: 100%;
             border: 1px solid var(--line);
             border-radius: 18px;
-            padding: 16px;
-            background: rgba(255, 255, 255, 0.65);
+            padding: 14px 16px;
+            background: rgba(255, 255, 255, 0.7);
             cursor: pointer;
-            transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+            text-align: left;
+            transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
         }
 
         .identity-card:hover,
-        .identity-card.active {
-            transform: translateY(-2px);
-            border-color: rgba(191, 91, 44, 0.45);
-            box-shadow: 0 14px 28px rgba(191, 91, 44, 0.12);
+        .identity-card.active,
+        .conversation-item:hover,
+        .conversation-item.active {
+            transform: translateY(-1px);
+            border-color: rgba(194, 94, 47, 0.42);
+            box-shadow: 0 14px 30px rgba(194, 94, 47, 0.1);
         }
 
         .identity-role {
@@ -105,135 +120,120 @@
             padding: 4px 10px;
             border-radius: 999px;
             font-size: 12px;
-            background: rgba(191, 91, 44, 0.12);
+            background: var(--accent-soft);
             color: var(--accent);
             margin-bottom: 10px;
         }
 
-        .workspace {
-            padding: 24px;
+        .sidebar-section {
             display: grid;
+            gap: 12px;
+        }
+
+        .sidebar-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .sidebar-head h3 {
+            font-size: 16px;
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            min-height: calc(100vh - 36px);
+            overflow: hidden;
+        }
+
+        .workspace-head {
+            padding: 22px 24px 18px;
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
             gap: 18px;
         }
 
-        .hero {
-            display: flex;
-            justify-content: space-between;
-            gap: 16px;
-            align-items: flex-start;
-            padding-bottom: 12px;
-            border-bottom: 1px solid var(--line);
-        }
-
-        .hero h2 {
-            margin: 0 0 8px;
-            font-size: 26px;
-        }
-
         .badge {
-            padding: 10px 14px;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.7);
+            min-width: 250px;
+            padding: 14px 16px;
+            border-radius: 18px;
             border: 1px solid var(--line);
-            min-width: 220px;
+            background: rgba(255, 255, 255, 0.76);
         }
 
-        .composer {
+        .workspace-body {
+            min-height: 0;
+            overflow: auto;
+            padding: 22px 24px;
             display: grid;
-            gap: 12px;
+            align-content: start;
         }
 
-        textarea {
-            width: 100%;
-            min-height: 120px;
-            resize: vertical;
-            padding: 18px;
-            border-radius: 20px;
-            border: 1px solid var(--line);
-            background: rgba(255, 255, 255, 0.82);
-            font: inherit;
-            color: var(--ink);
-            outline: none;
+        .message {
+            display: grid;
+            gap: 8px;
         }
 
-        textarea:focus {
-            border-color: rgba(191, 91, 44, 0.45);
-            box-shadow: 0 0 0 4px rgba(191, 91, 44, 0.08);
+        .message.user {
+            justify-items: end;
         }
 
-        .actions {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
+        .message.assistant {
+            justify-items: start;
         }
 
-        button {
-            border: 0;
-            border-radius: 999px;
-            padding: 12px 18px;
-            font: inherit;
-            cursor: pointer;
-            transition: transform 160ms ease, opacity 160ms ease;
-        }
-
-        button:hover {
-            transform: translateY(-1px);
-        }
-
-        .primary {
-            background: linear-gradient(135deg, #bf5b2c, #d37c3a);
-            color: #fffaf4;
-        }
-
-        .secondary {
-            background: rgba(255, 255, 255, 0.75);
-            color: var(--ink);
-            border: 1px solid var(--line);
-        }
-
-        .status {
-            min-height: 24px;
+        .message-meta {
+            font-size: 12px;
             color: var(--muted);
-            font-size: 14px;
+            padding: 0 6px;
         }
 
-        .status.error {
-            color: var(--danger);
+        .bubble {
+            width: min(100%, 920px);
+            border-radius: 22px;
+            border: 1px solid var(--line);
+            padding: 16px 18px;
+            background: var(--assistant-bubble);
         }
 
-        .status.success {
-            color: var(--success);
+        .message.user .bubble {
+            background: var(--user-bubble);
         }
 
-        .result-grid {
+        .message-text {
+            white-space: pre-wrap;
+            line-height: 1.65;
+        }
+
+        .assistant-blocks {
             display: grid;
-            gap: 16px;
+            gap: 14px;
+            width: 100%;
         }
 
         .result-card {
             border: 1px solid var(--line);
-            border-radius: 22px;
-            background: rgba(255, 255, 255, 0.7);
+            border-radius: 18px;
             overflow: hidden;
+            background: var(--panel-strong);
         }
 
         .result-card header {
             display: flex;
             justify-content: space-between;
-            gap: 12px;
             align-items: center;
-            padding: 16px 18px;
+            gap: 12px;
+            padding: 13px 16px;
             border-bottom: 1px solid var(--line);
-        }
-
-        .result-card h3 {
-            margin: 0;
-            font-size: 16px;
         }
 
         pre {
             margin: 0;
-            padding: 18px;
+            padding: 16px;
             overflow: auto;
             background: #1f1a16;
             color: #f8f1e8;
@@ -248,7 +248,7 @@
         }
 
         th, td {
-            padding: 12px 14px;
+            padding: 11px 14px;
             border-bottom: 1px solid var(--line);
             text-align: left;
             font-size: 14px;
@@ -256,25 +256,122 @@
         }
 
         th {
-            background: rgba(191, 91, 44, 0.08);
+            background: rgba(194, 94, 47, 0.08);
         }
 
         .empty {
-            padding: 24px;
+            padding: 24px 18px;
             color: var(--muted);
+            text-align: center;
+            border: 1px dashed var(--line);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.55);
         }
 
-        @media (max-width: 980px) {
+        .composer {
+            padding: 18px 24px 24px;
+            border-top: 1px solid var(--line);
+            display: grid;
+            gap: 12px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 108px;
+            resize: vertical;
+            padding: 16px 18px;
+            border-radius: 20px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.86);
+            color: var(--ink);
+            outline: none;
+        }
+
+        textarea:focus {
+            border-color: rgba(194, 94, 47, 0.45);
+            box-shadow: 0 0 0 4px rgba(194, 94, 47, 0.08);
+        }
+
+        .actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            border: 0;
+            border-radius: 999px;
+            padding: 11px 18px;
+            cursor: pointer;
+            transition: transform 160ms ease, opacity 160ms ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .primary {
+            background: linear-gradient(135deg, #bf5b2c, #d37c3a);
+            color: #fffaf4;
+        }
+
+        .secondary {
+            background: rgba(255, 255, 255, 0.82);
+            color: var(--ink);
+            border: 1px solid var(--line);
+        }
+
+        .status {
+            min-height: 22px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .status.success {
+            color: var(--success);
+        }
+
+        .status.error {
+            color: var(--danger);
+        }
+
+        .conversation-title {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .conversation-preview {
+            font-size: 13px;
+            color: var(--muted);
+            line-height: 1.45;
+        }
+
+        .loading {
+            opacity: 0.65;
+        }
+
+        @media (max-width: 1080px) {
             .shell {
                 grid-template-columns: 1fr;
             }
 
-            .sidebar {
-                position: static;
-            }
-
-            .hero {
-                flex-direction: column;
+            .workspace {
+                min-height: auto;
             }
         }
     </style>
@@ -282,47 +379,51 @@
 <body>
 <div class="shell">
     <aside class="panel sidebar">
-        <div class="eyebrow">Demo Identity</div>
-        <h1>SQL Agent 租户问答台</h1>
-        <p>通过切换不同身份预设来模拟不同登录用户。普通用户会自动走租户隔离，管理员查看全局数据。</p>
-        <div class="identity-list" id="identityList"></div>
+        <div class="sidebar-section">
+            <div class="eyebrow">Demo Identity</div>
+            <h1>SQL Agent 多轮会话台</h1>
+            <p class="meta">支持新增对话、会话切换、历史回放，并将每轮 SQL 与结果持久化保存。</p>
+        </div>
+
+        <section class="sidebar-section">
+            <div class="sidebar-head">
+                <h3>身份预设</h3>
+            </div>
+            <div class="identity-list" id="identityList"></div>
+        </section>
+
+        <section class="sidebar-section">
+            <div class="sidebar-head">
+                <h3>会话列表</h3>
+                <button class="secondary" id="newConversationButton" type="button">新增对话</button>
+            </div>
+            <div class="conversation-list" id="conversationList"></div>
+        </section>
     </aside>
 
     <main class="panel workspace">
-        <section class="hero">
+        <section class="workspace-head">
             <div>
-                <div class="eyebrow">Ask Anything</div>
-                <h2>用户无感知租户，后端自动注入权限上下文</h2>
-                <div class="meta">接口：<code>/api/sql/query</code>，请求头演示：<code>X-User-Id</code> / <code>X-Tenant-Id</code> / <code>X-User-Role</code></div>
+                <div class="eyebrow">Conversation</div>
+                <h2 id="conversationTitle">新对话</h2>
+                <div class="meta">接口：<code>/api/sql/conversations</code> 与 <code>/api/sql/conversations/{id}/messages</code></div>
             </div>
             <div class="badge" id="identitySummary"></div>
         </section>
 
-        <section class="composer">
-            <textarea id="questionInput" placeholder="例如：帮我看下本月订单金额最高的前 5 个门店"></textarea>
-            <div class="actions">
-                <button class="primary" id="sendButton">发送问题</button>
-                <button class="secondary" id="fillExampleButton">填入示例问题</button>
-            </div>
-            <div class="status" id="statusText"></div>
+        <section class="workspace-body" id="messageViewport">
+            <div class="message-list" id="messageList"></div>
         </section>
 
-        <section class="result-grid">
-            <article class="result-card">
-                <header>
-                    <h3>生成 SQL</h3>
-                    <span class="hint" id="rowCountText">等待执行</span>
-                </header>
-                <pre id="sqlOutput">-- 执行后显示 SQL</pre>
-            </article>
-
-            <article class="result-card">
-                <header>
-                    <h3>查询结果</h3>
-                    <span class="hint">结果表格</span>
-                </header>
-                <div id="tableContainer" class="empty">还没有结果，先问个问题试试。</div>
-            </article>
+        <section class="composer">
+            <textarea id="questionInput" placeholder="例如：帮我看下本月订单金额最高的前 5 个门店，然后继续问这些门店里订单数最低的是哪一家"></textarea>
+            <div class="actions">
+                <div class="status" id="statusText"></div>
+                <div class="button-group">
+                    <button class="secondary" id="fillExampleButton" type="button">填入示例问题</button>
+                    <button class="primary" id="sendButton" type="button">发送问题</button>
+                </div>
+            </div>
         </section>
     </main>
 </div>
@@ -335,18 +436,46 @@
     ];
 
     const state = {
-        selectedIdentity: identities[0]
+        selectedIdentity: identities[0],
+        conversations: [],
+        activeConversationId: null,
+        activeConversation: null,
+        loading: false
     };
 
     const identityList = document.getElementById("identityList");
     const identitySummary = document.getElementById("identitySummary");
+    const conversationList = document.getElementById("conversationList");
+    const newConversationButton = document.getElementById("newConversationButton");
+    const conversationTitle = document.getElementById("conversationTitle");
+    const messageList = document.getElementById("messageList");
+    const messageViewport = document.getElementById("messageViewport");
     const questionInput = document.getElementById("questionInput");
-    const sendButton = document.getElementById("sendButton");
     const fillExampleButton = document.getElementById("fillExampleButton");
+    const sendButton = document.getElementById("sendButton");
     const statusText = document.getElementById("statusText");
-    const sqlOutput = document.getElementById("sqlOutput");
-    const tableContainer = document.getElementById("tableContainer");
-    const rowCountText = document.getElementById("rowCountText");
+
+    function currentHeaders() {
+        const current = state.selectedIdentity;
+        return {
+            "Content-Type": "application/json",
+            "X-User-Id": current.userId,
+            "X-Tenant-Id": current.tenantId,
+            "X-User-Role": current.role
+        };
+    }
+
+    function setStatus(message, type = "") {
+        statusText.textContent = message;
+        statusText.className = "status" + (type ? ` ${type}` : "");
+    }
+
+    function setLoading(loading) {
+        state.loading = loading;
+        sendButton.disabled = loading;
+        newConversationButton.disabled = loading;
+        conversationList.classList.toggle("loading", loading);
+    }
 
     function renderIdentityCards() {
         identityList.innerHTML = "";
@@ -360,10 +489,11 @@
                 <div class="meta">userId: ${identity.userId}</div>
                 <div class="meta">${identity.role === "ADMIN" ? "全局可见，无租户限制" : `租户自动注入: ${identity.tenantId}`}</div>
             `;
-            card.addEventListener("click", () => {
+            card.addEventListener("click", async () => {
                 state.selectedIdentity = identity;
                 renderIdentityCards();
                 renderIdentitySummary();
+                await loadConversations(true);
             });
             identityList.appendChild(card);
         });
@@ -379,23 +509,191 @@
         `;
     }
 
-    function setStatus(message, type = "") {
-        statusText.textContent = message;
-        statusText.className = "status" + (type ? ` ${type}` : "");
+    function formatTimestamp(value) {
+        if (!value) {
+            return "";
+        }
+        const normalized = value.replace(" ", "T");
+        const date = new Date(normalized);
+        return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
     }
 
-    function renderTable(rows, emptyMessage = "查询成功，但没有返回数据。") {
-        if (!rows || rows.length === 0) {
-            tableContainer.className = "empty";
-            tableContainer.textContent = emptyMessage;
+    function escapeHtml(value) {
+        return String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll("\"", "&quot;")
+            .replaceAll("'", "&#39;");
+    }
+
+    function renderConversationList() {
+        if (!state.conversations.length) {
+            conversationList.innerHTML = `<div class="empty">还没有对话，点“新增对话”开始。</div>`;
             return;
         }
 
+        conversationList.innerHTML = "";
+        state.conversations.forEach(item => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "conversation-item" + (item.id === state.activeConversationId ? " active" : "");
+            button.innerHTML = `
+                <div class="conversation-title">${escapeHtml(item.title || "新对话")}</div>
+                <div class="conversation-preview">${escapeHtml(item.lastQuestion || "还没有发送消息")}</div>
+                <div class="status-meta">${escapeHtml(formatTimestamp(item.updatedAt))}</div>
+            `;
+            button.addEventListener("click", () => loadConversation(item.id));
+            conversationList.appendChild(button);
+        });
+    }
+
+    function renderRowsTable(rows) {
+        if (!rows || !rows.length) {
+            return `<div class="empty">本轮没有结果数据。</div>`;
+        }
         const columns = Object.keys(rows[0]);
-        const thead = `<thead><tr>${columns.map(column => `<th>${column}</th>`).join("")}</tr></thead>`;
-        const tbody = `<tbody>${rows.map(row => `<tr>${columns.map(column => `<td>${row[column] ?? ""}</td>`).join("")}</tr>`).join("")}</tbody>`;
-        tableContainer.className = "";
-        tableContainer.innerHTML = `<table>${thead}${tbody}</table>`;
+        const thead = `<thead><tr>${columns.map(column => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead>`;
+        const tbody = `<tbody>${rows.map(row => `<tr>${columns.map(column => `<td>${escapeHtml(row[column])}</td>`).join("")}</tr>`).join("")}</tbody>`;
+        return `<table>${thead}${tbody}</table>`;
+    }
+
+    function renderMessages() {
+        if (!state.activeConversation) {
+            conversationTitle.textContent = "新对话";
+            messageList.innerHTML = `<div class="empty">先创建一个对话，再开始提问。</div>`;
+            return;
+        }
+
+        const { conversation, messages } = state.activeConversation;
+        conversationTitle.textContent = conversation.title || "新对话";
+
+        if (!messages || !messages.length) {
+            messageList.innerHTML = `<div class="empty">这个会话还没有消息，输入问题开始查询。</div>`;
+            return;
+        }
+
+        messageList.innerHTML = messages.map(message => {
+            if (message.role === "USER") {
+                return `
+                    <article class="message user">
+                        <div class="message-meta">用户 · ${escapeHtml(formatTimestamp(message.createdAt))}</div>
+                        <div class="bubble">
+                            <div class="message-text">${escapeHtml(message.question || "")}</div>
+                        </div>
+                    </article>
+                `;
+            }
+
+            const assistantText = escapeHtml(message.answerText || (message.status === "ERROR" ? "查询失败。" : "查询已完成。"));
+            const sqlBlock = message.sqlText ? `
+                <section class="result-card">
+                    <header>
+                        <strong>生成 SQL</strong>
+                        <span class="hint">${escapeHtml((message.rowCount || 0) + " rows")}</span>
+                    </header>
+                    <pre>${escapeHtml(message.sqlText)}</pre>
+                </section>
+            ` : "";
+            const rowsBlock = message.status === "ERROR"
+                ? `<section class="result-card"><header><strong>错误信息</strong></header><div class="empty">${escapeHtml(message.errorMessage || "执行失败")}</div></section>`
+                : `<section class="result-card"><header><strong>查询结果</strong><span class="hint">${escapeHtml((message.rowCount || 0) + " rows")}</span></header>${renderRowsTable(message.rows || [])}</section>`;
+
+            return `
+                <article class="message assistant">
+                    <div class="message-meta">助手 · ${escapeHtml(formatTimestamp(message.createdAt))}</div>
+                    <div class="bubble">
+                        <div class="assistant-blocks">
+                            <div class="message-text">${assistantText}</div>
+                            ${sqlBlock}
+                            ${rowsBlock}
+                        </div>
+                    </div>
+                </article>
+            `;
+        }).join("");
+
+        requestAnimationFrame(() => {
+            messageViewport.scrollTop = messageViewport.scrollHeight;
+        });
+    }
+
+    async function requestJson(url, options = {}) {
+        const response = await fetch(url, {
+            ...options,
+            headers: {
+                ...currentHeaders(),
+                ...(options.headers || {})
+            }
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.message || "请求失败");
+        }
+        return payload;
+    }
+
+    async function loadConversations(autoSelectFirst = false) {
+        setLoading(true);
+        try {
+            state.conversations = await requestJson("/api/sql/conversations", { method: "GET" });
+            renderConversationList();
+
+            if (!state.conversations.length) {
+                state.activeConversationId = null;
+                state.activeConversation = null;
+                renderMessages();
+                setStatus("当前身份还没有历史会话。", "");
+                return;
+            }
+
+            const nextId = autoSelectFirst
+                ? state.conversations[0].id
+                : (state.activeConversationId && state.conversations.some(item => item.id === state.activeConversationId)
+                    ? state.activeConversationId
+                    : state.conversations[0].id);
+            await loadConversation(nextId, false);
+        } catch (error) {
+            setStatus(error.message, "error");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function loadConversation(conversationId, updateStatus = true) {
+        if (!conversationId) {
+            return;
+        }
+        try {
+            state.activeConversation = await requestJson(`/api/sql/conversations/${conversationId}`, { method: "GET" });
+            state.activeConversationId = conversationId;
+            renderConversationList();
+            renderMessages();
+            if (updateStatus) {
+                setStatus("已切换到历史会话。", "");
+            }
+        } catch (error) {
+            setStatus(error.message, "error");
+        }
+    }
+
+    async function createConversation() {
+        setLoading(true);
+        try {
+            state.activeConversation = await requestJson("/api/sql/conversations", {
+                method: "POST"
+            });
+            state.activeConversationId = state.activeConversation.conversation.id;
+            state.conversations = [state.activeConversation.conversation, ...state.conversations];
+            renderConversationList();
+            renderMessages();
+            setStatus("已创建新对话。", "success");
+            questionInput.focus();
+        } catch (error) {
+            setStatus(error.message, "error");
+        } finally {
+            setLoading(false);
+        }
     }
 
     async function submitQuestion() {
@@ -405,45 +703,35 @@
             return;
         }
 
-        const current = state.selectedIdentity;
-        sendButton.disabled = true;
-        setStatus("SQL Agent 正在规划查询并执行...", "");
-        sqlOutput.textContent = "-- 生成中";
-        rowCountText.textContent = "执行中";
+        if (!state.activeConversationId) {
+            await createConversation();
+        }
+
+        setLoading(true);
+        setStatus("SQL Agent 正在分析会话上下文并执行查询...", "");
 
         try {
-            const response = await fetch("/api/sql/query", {
+            state.activeConversation = await requestJson(`/api/sql/conversations/${state.activeConversationId}/messages`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-User-Id": current.userId,
-                    "X-Tenant-Id": current.tenantId,
-                    "X-User-Role": current.role
-                },
                 body: JSON.stringify({ question })
             });
-            const payload = await response.json();
-            if (payload.status !== "success") {
-                throw new Error(payload.message || "查询失败");
-            }
-
-            const friendlyMessage = payload.message || "";
-            const hasSql = Boolean(payload.sql && payload.sql.trim());
-            sqlOutput.textContent = hasSql ? payload.sql : "-- 未返回 SQL";
-            rowCountText.textContent = `${payload.rowCount} rows`;
-            renderTable(payload.rows || [], friendlyMessage || "查询成功，但没有返回数据。");
-            setStatus(
-                friendlyMessage || `${payload.role === "ADMIN" ? "管理员视角" : `租户 ${payload.tenantId}`} 查询成功`,
-                "success"
-            );
+            questionInput.value = "";
+            await refreshConversationSummary();
+            renderConversationList();
+            renderMessages();
+            setStatus("本轮对话已保存。", "success");
         } catch (error) {
-            sqlOutput.textContent = "-- 执行失败";
-            rowCountText.textContent = "失败";
-            tableContainer.className = "empty";
-            tableContainer.textContent = error.message;
             setStatus(error.message, "error");
         } finally {
-            sendButton.disabled = false;
+            setLoading(false);
+        }
+    }
+
+    async function refreshConversationSummary() {
+        state.conversations = await requestJson("/api/sql/conversations", { method: "GET" });
+        const active = state.conversations.find(item => item.id === state.activeConversationId);
+        if (active && state.activeConversation) {
+            state.activeConversation.conversation = active;
         }
     }
 
@@ -452,6 +740,7 @@
         questionInput.focus();
     });
 
+    newConversationButton.addEventListener("click", createConversation);
     sendButton.addEventListener("click", submitQuestion);
     questionInput.addEventListener("keydown", event => {
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -459,8 +748,13 @@
         }
     });
 
-    renderIdentityCards();
-    renderIdentitySummary();
+    async function bootstrap() {
+        renderIdentityCards();
+        renderIdentitySummary();
+        await loadConversations(true);
+    }
+
+    bootstrap();
 </script>
 </body>
 </html>

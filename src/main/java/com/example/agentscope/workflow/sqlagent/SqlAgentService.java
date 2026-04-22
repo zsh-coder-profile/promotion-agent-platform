@@ -55,11 +55,18 @@ public class SqlAgentService {
      * Plan SQL with the model and execute it locally without sending query results back to the LLM.
      */
     public SqlAgentResult run(String question, SqlAccessContext accessContext) {
+        return run(question, accessContext, List.of());
+    }
+
+    public SqlAgentResult run(
+            String question,
+            SqlAccessContext accessContext,
+            List<ChatHistoryTurn> chatHistory) {
         List<ToolUsageMemorySearchResult> memoryHits = toolUsageMemory.searchSimilarUsage(
                 question, accessContext, MEMORY_SEARCH_LIMIT, MEMORY_SIMILARITY_THRESHOLD);
         Msg userMsg = Msg.builder()
                 .role(MsgRole.USER)
-                .textContent(buildQuestionWithAccessContext(question, accessContext, memoryHits))
+                .textContent(buildQuestionWithAccessContext(question, accessContext, memoryHits, chatHistory))
                 .build();
         return runWithTools(question, accessContext, memoryHits, userMsg);
     }
@@ -110,9 +117,14 @@ public class SqlAgentService {
     static String buildQuestionWithAccessContext(
             String question,
             SqlAccessContext accessContext,
-            List<ToolUsageMemorySearchResult> memoryHits) {
+            List<ToolUsageMemorySearchResult> memoryHits,
+            List<ChatHistoryTurn> chatHistory) {
         StringBuilder builder = new StringBuilder();
         builder.append(question == null ? "" : question);
+        if (chatHistory != null && !chatHistory.isEmpty()) {
+            builder.append("\n\n[对话历史]\n")
+                    .append(formatChatHistory(chatHistory));
+        }
         if (memoryHits != null && !memoryHits.isEmpty()) {
             builder.append("\n\n[历史成功工具调用模式]\n")
                     .append(formatMemoryHits(memoryHits));
@@ -132,6 +144,19 @@ public class SqlAgentService {
                 .append(accessContext.tenantId())
                 .append("' 做过滤。");
         return builder.toString();
+    }
+
+    private static String formatChatHistory(List<ChatHistoryTurn> chatHistory) {
+        return chatHistory.stream()
+                .map(turn -> """
+                        - 用户问题: %s
+                          助手回复: %s
+                          SQL: %s
+                        """.formatted(
+                        turn.question(),
+                        turn.answer() == null || turn.answer().isBlank() ? "无" : turn.answer(),
+                        turn.sql() == null || turn.sql().isBlank() ? "无" : turn.sql()))
+                .collect(Collectors.joining("\n"));
     }
 
     private static String formatMemoryHits(List<ToolUsageMemorySearchResult> memoryHits) {
@@ -186,5 +211,11 @@ public class SqlAgentService {
         public int memoryHitCount() {
             return memoryHits == null ? 0 : memoryHits.size();
         }
+    }
+
+    public record ChatHistoryTurn(
+            String question,
+            String answer,
+            String sql) {
     }
 }

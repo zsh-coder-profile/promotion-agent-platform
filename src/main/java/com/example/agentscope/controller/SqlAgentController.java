@@ -3,10 +3,13 @@ package com.example.agentscope.controller;
 import com.example.agentscope.workflow.sqlagent.SqlAccessContext;
 import com.example.agentscope.workflow.sqlagent.SqlAgentService;
 import com.example.agentscope.workflow.sqlagent.SqlAgentService.SqlAgentResult;
+import com.example.agentscope.workflow.sqlagent.chat.SqlChatRepository;
+import com.example.agentscope.workflow.sqlagent.chat.SqlChatService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -15,9 +18,11 @@ import java.util.Map;
 public class SqlAgentController {
 
     private final SqlAgentService sqlAgentService;
+    private final SqlChatService sqlChatService;
 
-    public SqlAgentController(SqlAgentService sqlAgentService) {
+    public SqlAgentController(SqlAgentService sqlAgentService, SqlChatService sqlChatService) {
         this.sqlAgentService = sqlAgentService;
+        this.sqlChatService = sqlChatService;
     }
 
     /**
@@ -55,5 +60,44 @@ public class SqlAgentController {
             result.put("message", e.getMessage());
         }
         return result;
+    }
+
+    @GetMapping("/conversations")
+    public List<SqlChatRepository.ConversationSummary> listConversations(
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        SqlAccessContext accessContext = SqlAccessContext.fromHeaders(userId, tenantId, userRole);
+        return sqlChatService.listConversations(accessContext);
+    }
+
+    @PostMapping("/conversations")
+    public SqlChatService.ChatConversationDetail createConversation(
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        SqlAccessContext accessContext = SqlAccessContext.fromHeaders(userId, tenantId, userRole);
+        return sqlChatService.createConversation(accessContext);
+    }
+
+    @GetMapping("/conversations/{conversationId}")
+    public SqlChatService.ChatConversationDetail getConversation(
+            @PathVariable String conversationId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        SqlAccessContext accessContext = SqlAccessContext.fromHeaders(userId, tenantId, userRole);
+        return sqlChatService.getConversation(conversationId, accessContext);
+    }
+
+    @PostMapping("/conversations/{conversationId}/messages")
+    public SqlChatService.ChatConversationDetail sendMessage(
+            @PathVariable String conversationId,
+            @RequestBody Map<String, String> body,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        SqlAccessContext accessContext = SqlAccessContext.fromHeaders(userId, tenantId, userRole);
+        return sqlChatService.sendMessage(conversationId, body.get("question"), accessContext);
     }
 }
