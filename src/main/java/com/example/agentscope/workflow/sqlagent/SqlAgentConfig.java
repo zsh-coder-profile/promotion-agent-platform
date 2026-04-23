@@ -73,7 +73,35 @@ public class SqlAgentConfig {
     @Value("${workflow.sql.memory.pgvector.table-name:sql_tool_usage_memory}")
     private String pgvectorTableName;
 
-    static String generateQueryPrompt(String dialect) {
+    @Value("${workflow.sql.debug.verbose-reasoning:false}")
+    private boolean verboseReasoning;
+
+    static String generateQueryPrompt(String dialect, boolean verboseReasoning) {
+        String debugInstruction = verboseReasoning
+                ? """
+
+            调试模式说明：
+            1. 在每一轮调用工具之前，可以先输出简短但具体的分析，说明你为什么要调用这个工具、准备验证哪些表或字段。
+            2. 如果本轮决定直接结束，也可以先输出你的判断依据，再给最终答案。
+            3. 这些中间分析可以比 debug_summary 更详细，但必须聚焦数据库查询决策，不要编造看不到的数据。
+            4. 最终答案仍然必须遵守下面的 JSON 输出要求，不要在最终 JSON 前后追加额外解释。
+            """
+                : "";
+        String finalAnswerInstruction = verboseReasoning
+                ? """
+            其中 debug_summary 需要给出较详细、可审计的调试摘要，说明：
+            1. 你判断相关的表/字段是什么；
+            2. 你为什么需要这些筛选、排序或 limit；
+            3. 是否使用了租户或当前用户范围限制；
+            4. 如果参考了历史成功工具调用模式，是如何参考的。
+            """
+                : """
+            其中 debug_summary 必须是简短、可审计的调试摘要，只说明：
+            1. 你判断相关的表/字段是什么；
+            2. 你为什么需要这些筛选、排序或 limit；
+            3. 是否使用了租户或当前用户范围限制。
+            不要输出隐私推理，不要写“我在思考”，不要暴露冗长链路。
+            """;
         return """
             你是一个严格受限的数据查询 Agent，只负责把“与数据库查询相关的问题”转换成 SQL。
             你必须先判断用户问题是否属于以下范围：查数据、查明细、做统计、筛选、排序、聚合、分组、排行、按条件查询、基于表结构生成 SQL。
@@ -102,18 +130,15 @@ public class SqlAgentConfig {
             6. 如果当前会话里已经有本轮可复用的 schema 工具结果，可以直接复用，不必重复调用 sql_db_schema。
             7. 如果当前会话里没有足够的 schema 信息，必须重新调用工具获取，而不是根据历史命中臆测字段。
             8. 获得足够的 schema 信息后，直接生成最终 SQL。
+            %s
 
             禁止对数据库执行任何 DML 语句（INSERT、UPDATE、DELETE、DROP 等）。
             最终优先输出 JSON，格式必须是：
             {"sql":"...","debug_summary":"..."}
-            其中 debug_summary 必须是简短、可审计的调试摘要，只说明：
-            1. 你判断相关的表/字段是什么；
-            2. 你为什么需要这些筛选、排序或 limit；
-            3. 是否使用了租户或当前用户范围限制。
-            不要输出隐私推理，不要写“我在思考”，不要暴露冗长链路。
+            %s
             如果无法输出 JSON，才退化为只输出一个 ```sql 代码块。
             """
-                    .formatted(SqlAgentService.OUT_OF_SCOPE_REPLY, dialect, TOP_K);
+                    .formatted(SqlAgentService.OUT_OF_SCOPE_REPLY, dialect, TOP_K, debugInstruction, finalAnswerInstruction);
     }
 
     @Bean
@@ -204,10 +229,11 @@ public class SqlAgentConfig {
         toolkit.registerTool(sqlTools);
         return ReActAgent.builder()
                 .name("sql_agent")
-                .sysPrompt(generateQueryPrompt(dialectName))
+                .sysPrompt(generateQueryPrompt(dialectName, verboseReasoning))
                 .model(model)
                 .toolkit(toolkit)
-                .hook(new SqlAgentLangfuseHook())
+                .hook(new SqlAgentReasoningPrintHook())
+//                .hook(new SqlAgentLangfuseHook())
                 .memory(new InMemoryMemory())
                 .build();
     }

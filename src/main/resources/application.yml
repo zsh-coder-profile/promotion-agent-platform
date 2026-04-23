@@ -39,6 +39,8 @@ spring:
 workflow:
   sql:
     enabled: true
+    debug:
+      verbose-reasoning: true
     memory:
       embedding:
         base-url: http://127.0.0.1:11434
