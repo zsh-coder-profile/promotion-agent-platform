@@ -104,7 +104,14 @@ public class SqlAgentConfig {
             8. 获得足够的 schema 信息后，直接生成最终 SQL。
 
             禁止对数据库执行任何 DML 语句（INSERT、UPDATE、DELETE、DROP 等）。
-            最终只输出 SQL，不要输出解释。可以输出 JSON：{"sql":"..."}，也可以只输出一个 ```sql 代码块。
+            最终优先输出 JSON，格式必须是：
+            {"sql":"...","debug_summary":"..."}
+            其中 debug_summary 必须是简短、可审计的调试摘要，只说明：
+            1. 你判断相关的表/字段是什么；
+            2. 你为什么需要这些筛选、排序或 limit；
+            3. 是否使用了租户或当前用户范围限制。
+            不要输出隐私推理，不要写“我在思考”，不要暴露冗长链路。
+            如果无法输出 JSON，才退化为只输出一个 ```sql 代码块。
             """
                     .formatted(SqlAgentService.OUT_OF_SCOPE_REPLY, dialect, TOP_K);
     }
@@ -200,6 +207,7 @@ public class SqlAgentConfig {
                 .sysPrompt(generateQueryPrompt(dialectName))
                 .model(model)
                 .toolkit(toolkit)
+                .hook(new SqlAgentLangfuseHook())
                 .memory(new InMemoryMemory())
                 .build();
     }

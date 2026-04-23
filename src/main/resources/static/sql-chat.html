@@ -355,6 +355,22 @@
             background: linear-gradient(135deg, rgba(182, 146, 106, 0.1), rgba(252, 250, 245, 0.98));
         }
 
+        .debug-card {
+            border: 1px solid rgba(136, 100, 74, 0.22);
+            border-radius: 18px;
+            padding: 16px 18px;
+            background:
+                    linear-gradient(180deg, rgba(255, 248, 238, 0.96), rgba(251, 246, 239, 0.92)),
+                    repeating-linear-gradient(
+                            135deg,
+                            rgba(136, 100, 74, 0.04),
+                            rgba(136, 100, 74, 0.04) 8px,
+                            rgba(255, 255, 255, 0.02) 8px,
+                            rgba(255, 255, 255, 0.02) 16px
+                    );
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+        }
+
         .summary-title {
             font-size: 12px;
             letter-spacing: 0.14em;
@@ -367,6 +383,12 @@
         .summary-content {
             color: var(--ink);
             line-height: 1.75;
+        }
+
+        .debug-content {
+            color: var(--accent-strong);
+            line-height: 1.8;
+            white-space: pre-wrap;
         }
 
         .metrics-grid {
@@ -1355,9 +1377,24 @@
         `;
     }
 
+    function renderDebugSummary(debugSummary) {
+        if (!debugSummary) {
+            return "";
+        }
+        return `
+            <section class="report-summary">
+                <article class="debug-card">
+                    <div class="summary-title">Debug Summary</div>
+                    <div class="debug-content">${escapeHtml(debugSummary)}</div>
+                </article>
+            </section>
+        `;
+    }
+
     function renderAssistantReport(message) {
         const assistantText = message.answerText || (message.status === "ERROR" ? "查询失败。" : "查询已完成。");
         const summaryBlock = renderSummary(message.summary, assistantText);
+        const debugSummaryBlock = renderDebugSummary(message.debugSummary);
         const metricsBlock = renderMetrics(message.metrics);
         const inferredChart = !message.charts?.length && message.status !== "ERROR"
             ? inferChartFromRows(message.rows || [], message.sqlText || "")
@@ -1379,6 +1416,7 @@
         return `
             <div class="report-shell">
                 ${summaryBlock}
+                ${debugSummaryBlock}
                 ${metricsBlock}
                 ${chartsBlock}
                 ${sqlBlock}

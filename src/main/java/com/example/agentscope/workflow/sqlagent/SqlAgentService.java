@@ -85,6 +85,7 @@ public class SqlAgentService {
                 return new SqlAgentResult(
                         question,
                         "",
+                        "",
                         List.of(),
                         responseMsg,
                         OUT_OF_SCOPE_REPLY,
@@ -94,6 +95,7 @@ public class SqlAgentService {
                         recordedToolUsages);
             }
             String sql = extractSql(rawText);
+            String debugSummary = extractDebugSummary(rawText);
             List<Map<String, Object>> rows = sqlTools.executeQuery(sql, accessContext);
             List<RecordedToolUsage> recordedToolUsages = sqlToolUsageRecorder.stopSession(recorderSessionId);
             toolUsageMemory.saveSuccessfulUsage(question, accessContext, recordedToolUsages, sql);
@@ -101,6 +103,7 @@ public class SqlAgentService {
             return new SqlAgentResult(
                     question,
                     sql,
+                    debugSummary,
                     rows,
                     responseMsg,
                     "",
@@ -170,7 +173,7 @@ public class SqlAgentService {
         if (rawText == null || rawText.isBlank()) {
             throw new IllegalStateException("LLM did not return SQL.");
         }
-        String jsonSql = tryExtractJsonSql(rawText);
+        String jsonSql = tryExtractJsonField(rawText, "sql");
         if (jsonSql != null) {
             return jsonSql;
         }
@@ -181,12 +184,17 @@ public class SqlAgentService {
         return rawText.trim();
     }
 
-    private static String tryExtractJsonSql(String rawText) {
+    static String extractDebugSummary(String rawText) {
+        String debugSummary = tryExtractJsonField(rawText, "debug_summary");
+        return debugSummary == null ? "" : debugSummary;
+    }
+
+    private static String tryExtractJsonField(String rawText, String fieldName) {
         try {
             JsonNode node = JSON.readTree(rawText);
-            JsonNode sqlNode = node.get("sql");
-            if (sqlNode != null && !sqlNode.asText().isBlank()) {
-                return sqlNode.asText().trim();
+            JsonNode fieldNode = node.get(fieldName);
+            if (fieldNode != null && !fieldNode.asText().isBlank()) {
+                return fieldNode.asText().trim();
             }
             return null;
         } catch (Exception e) {
@@ -201,6 +209,7 @@ public class SqlAgentService {
     public record SqlAgentResult(
             String question,
             String sql,
+            String debugSummary,
             List<Map<String, Object>> rows,
             Msg rawMsg,
             String message,

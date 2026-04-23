@@ -44,6 +44,7 @@ public class SqlAgentController {
             SqlAgentResult agentResult = sqlAgentService.run(question, accessContext);
             result.put("status", "success");
             result.put("sql", agentResult.sql());
+            result.put("debugSummary", agentResult.debugSummary());
             result.put("rows", agentResult.rows());
             result.put("rowCount", agentResult.rows().size());
             result.put("memoryHits", agentResult.memoryHitCount());

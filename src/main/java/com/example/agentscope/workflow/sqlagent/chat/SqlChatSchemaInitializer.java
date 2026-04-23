@@ -37,6 +37,7 @@ public class SqlChatSchemaInitializer implements InitializingBean {
                     question TEXT,
                     answer_text TEXT,
                     sql_text TEXT,
+                    debug_summary TEXT,
                     result_rows_json TEXT,
                     result_row_count INTEGER,
                     status VARCHAR(16) NOT NULL,
@@ -46,6 +47,10 @@ public class SqlChatSchemaInitializer implements InitializingBean {
                         FOREIGN KEY (conversation_id) REFERENCES sql_chat_conversation (id)
                         ON DELETE CASCADE
                 )
+                """);
+        jdbcTemplate.execute("""
+                ALTER TABLE sql_chat_message
+                ADD COLUMN IF NOT EXISTS debug_summary TEXT
                 """);
         jdbcTemplate.execute("""
                 CREATE INDEX IF NOT EXISTS idx_sql_chat_message_conversation_created

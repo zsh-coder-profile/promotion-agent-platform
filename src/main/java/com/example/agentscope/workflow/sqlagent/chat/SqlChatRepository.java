@@ -32,6 +32,7 @@ public class SqlChatRepository {
                     rs.getString("question"),
                     rs.getString("answer_text"),
                     rs.getString("sql_text"),
+                    rs.getString("debug_summary"),
                     rs.getString("result_rows_json"),
                     rs.getObject("result_row_count", Integer.class),
                     rs.getString("status"),
@@ -116,7 +117,7 @@ public class SqlChatRepository {
 
     public List<ConversationMessageRecord> listMessages(String conversationId) {
         return jdbcTemplate.query("""
-                        SELECT id, conversation_id, message_role, question, answer_text, sql_text,
+                        SELECT id, conversation_id, message_role, question, answer_text, sql_text, debug_summary,
                                result_rows_json, result_row_count, status, error_message, created_at
                         FROM sql_chat_message
                         WHERE conversation_id = ?
@@ -144,6 +145,7 @@ public class SqlChatRepository {
             String conversationId,
             String answerText,
             String sqlText,
+            String debugSummary,
             String resultRowsJson,
             Integer resultRowCount,
             String status,
@@ -151,14 +153,15 @@ public class SqlChatRepository {
         String id = UUID.randomUUID().toString();
         jdbcTemplate.update("""
                         INSERT INTO sql_chat_message (
-                            id, conversation_id, message_role, answer_text, sql_text, result_rows_json,
+                            id, conversation_id, message_role, answer_text, sql_text, debug_summary, result_rows_json,
                             result_row_count, status, error_message, created_at
-                        ) VALUES (?, ?, 'ASSISTANT', ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, 'ASSISTANT', ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 id,
                 conversationId,
                 answerText,
                 sqlText,
+                debugSummary,
                 resultRowsJson,
                 resultRowCount,
                 status,
@@ -194,6 +197,7 @@ public class SqlChatRepository {
             String question,
             String answerText,
             String sqlText,
+            String debugSummary,
             String resultRowsJson,
             Integer resultRowCount,
             String status,

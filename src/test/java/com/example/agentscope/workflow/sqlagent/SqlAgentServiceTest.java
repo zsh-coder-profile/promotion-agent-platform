@@ -40,7 +40,7 @@ class SqlAgentServiceTest {
         Msg response =
                 Msg.builder()
                         .role(MsgRole.ASSISTANT)
-                        .textContent("{\"sql\":\"SELECT genre, avg_ms FROM genre_stats LIMIT 5\"}")
+                        .textContent("{\"sql\":\"SELECT genre, avg_ms FROM genre_stats LIMIT 5\",\"debug_summary\":\"命中 genre_stats 表，按租户过滤并保留 5 条样本。\"}")
                         .build();
         List<Map<String, Object>> rows = List.of(Map.of("genre", "Jazz", "avg_ms", 123));
         when(jdbcTemplate.queryForList(anyString(), any(Object[].class))).thenReturn(rows);
@@ -59,6 +59,7 @@ class SqlAgentServiceTest {
 
         assertEquals("question", result.question());
         assertEquals("SELECT genre, avg_ms FROM genre_stats LIMIT 5", result.sql());
+        assertEquals("命中 genre_stats 表，按租户过滤并保留 5 条样本。", result.debugSummary());
         assertEquals(rows, result.rows());
         assertSame(response, result.rawMsg());
         assertEquals(2, result.recordedToolUsages().size());
@@ -98,6 +99,7 @@ class SqlAgentServiceTest {
                 service.run("question", SqlAccessContext.admin("admin-user"));
 
         assertEquals("SELECT * FROM users LIMIT 5", result.sql());
+        assertEquals("", result.debugSummary());
         assertEquals(rows, result.rows());
         verify(jdbcTemplate).queryForList("SELECT * FROM users LIMIT 5");
     }
@@ -153,6 +155,7 @@ class SqlAgentServiceTest {
         SqlAgentService.SqlAgentResult result = service.run("你会写 Java 吗", SqlAccessContext.admin("admin-user"));
 
         assertEquals("", result.sql());
+        assertEquals("", result.debugSummary());
         assertTrue(result.rows().isEmpty());
         assertEquals(SqlAgentService.OUT_OF_SCOPE_REPLY, result.message());
         assertSame(response, result.rawMsg());
@@ -193,7 +196,17 @@ class SqlAgentServiceTest {
                 service.run("查询未使用优惠券", SqlAccessContext.tenantUser("user-a", "tenant-a"));
 
         assertEquals("SELECT id FROM users LIMIT 1", result.sql());
+        assertEquals("", result.debugSummary());
         verify(agent).call(any(Msg.class));
         verify(memory).saveSuccessfulUsage(eq("查询未使用优惠券"), eq(SqlAccessContext.tenantUser("user-a", "tenant-a")), any(), eq("SELECT id FROM users LIMIT 1"));
+    }
+
+    @Test
+    void extractDebugSummaryReadsJsonField() {
+        String rawText = """
+                {"sql":"SELECT id FROM users LIMIT 5","debug_summary":"围绕 users 表查询，并按租户限制最近注册用户。"}
+                """;
+
+        assertEquals("围绕 users 表查询，并按租户限制最近注册用户。", SqlAgentService.extractDebugSummary(rawText));
     }
 }
